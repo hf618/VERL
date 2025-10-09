@@ -1,1 +1,1 @@
-Full code and guidance wil be released soon！
+Full code and guidance will be released soon！
