@@ -1,0 +1,8 @@
+working_dir: ./
+# excludes: ["/.git/", "*.safetensors"]
+excludes: 
+  - "/.git/"             # 排除.git目录
+  - "/home/hfd24/Qwen/model/qwen/Qwen2.5-3B-Instruct/*.safetensors"  # 递归排除所有.safetensors文件
+env_vars:
+  TORCH_NCCL_AVOID_RECORD_STREAMS: "1"
+  VLLM_ATTENTION_BACKEND: "XFORMERS"
