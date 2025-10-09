@@ -1,0 +1,21 @@
+# VS Code specific
+.vscode/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Distribution / packaging
+.eggs/
+*.egg-info/
+dist/
+build/
+
+# Local environment variables
+.env
