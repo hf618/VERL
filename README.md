@@ -45,7 +45,7 @@ Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the 
 
 <!-- <br> -->
 
-## 🚀 Analysis, Method, Results
+## 👽 Analysis, Method, Results
 
 For a brief description, please refer to our [Project Page](https://hf618.github.io/VERL.github.io/); for a detailed description, please refer to the [paper](https://arxiv.org/abs/2509.23808).
 
