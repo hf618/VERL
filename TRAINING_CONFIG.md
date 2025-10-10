@@ -1,6 +1,6 @@
 # Training Configuration Details
 
-This document provides a detailed explanation of the environment variables and experiment settings available in the `train.sh` script.
+This document provides a detailed explanation of the experiment settings available in the `train.sh` script.
 
 ## Experiment Settings
 

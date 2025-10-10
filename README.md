@@ -80,7 +80,7 @@ To start training, configure the required environment variables and customize th
 bash train.sh
 ```
 
-For the details of environment variables, you can refer to [here](TRAINING_CONFIG.md).
+For the details of experiment settings, you can refer to [here](TRAINING_CONFIG.md).
 
 
 ### 🪁 Evaluation
