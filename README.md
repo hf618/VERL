@@ -47,7 +47,7 @@ Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the 
 
 ## 👽 Analysis, Method, Results
 
-For a brief description, please refer to our [Project Page](https://hf618.github.io/VERL.github.io/); for a detailed description, please refer to the [paper](https://arxiv.org/abs/2509.23808).
+For a brief description, please refer to our [Project Page](https://hf618.github.io/VERL.github.io/); for a detailed description, please refer to the [Paper](https://arxiv.org/abs/2509.23808).
 
 ## 🚀 Quick Start
 
@@ -94,6 +94,8 @@ We provide a script for inference, simply config the `RUN_NAME_MAP` and `ACTIVE_
 ```sh
 bash eval.sh
 ```
+
+You can also add your own test datasets to [this fold](/examples/simplelr_math_eval/data).
 
 <br>
 
