@@ -60,19 +60,35 @@ pip3 install -e .
 pip3 install -r requirements.txt
 ```
 
+### ⚡️ Training
+
+We also open-source our complete training scripts for the community. We follow the training data used in [simpleRL-reason](https://github.com/hkust-nlp/simpleRL-reason). 
+
+The training process leverages Ray and vLLM for acceleration. So firstly, you need to launch the ray cluster using the command below:
+
+```sh
+# launch the master node of ray 
+ray start --head --node-ip-address 0.0.0.0 --num-gpus 8
+
+# if you want to launch ray on more nodes, use
+ray start --address {MASTER-NODE-ADDRESS}:6379  --num-gpus 8
+```
+
+To start training, configure the required environment variables and customize the experiment settings at the end of the [train.sh](train.sh) script. Then, from the master node, submit the training job by running the following command:
+
+```sh
+bash train.sh
+```
+
+For the details of environment variables, you can refer to [here](TRAINING_CONFIG.md).
+
+
 ### 🪁 Evaluation
 
 We provide a script for inference, simply config the `RUN_NAME_MAP` and `ACTIVE_CONFIG_SET`  in [eval.sh](eval.sh) and run the following command:
 
 ```sh
 bash eval.sh
-```
-
-### ⚡️ Training
-We also open-source our complete training scripts for the community. We follow the training data used in [simpleRL-reason](https://github.com/hkust-nlp/simpleRL-reason). Customize the experiment settings at the end of the [train.sh](train.sh) file, run the following command:
-
-```sh
-bash train.sh
 ```
 
 <br>

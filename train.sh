@@ -58,13 +58,13 @@ export RAY_RUNTIME_ENV_JSON="{
 
 
 # ==============================================================================
-#                 EXECUTION LOGIC
+#                 CONFIGURATIONS FOR YOUR EXPERIMENTS
 # ==============================================================================
 
 bash train_grpo_math_tune_ray.sh \
     --model_name mistralai/Mathstral-7B-v0.1 --max_prompt_length 512 --max_response_length 1536 \
     --critic_model_path "" --adv_estimator "grpo"  \
-    --exp_name "GRPO_VERL" --add_reward False --add_adv True \
+    --exp_name "GRPO_ORIGIN" --add_reward False --add_adv True \
     --train_batch_size 48 --ppo_mini_batch_size 24 --val_batch_size 48  --rollout_n 4 \
     --ppo_micro_batch_size 1 --log_prob_micro_batch_size 12 --micro_rollout_batch_size 12 \
     --compute_global_metrics True --compute_cumulative_global_metrics True --global_diff_stride_train 20 --global_diff_stride_val 20 \
