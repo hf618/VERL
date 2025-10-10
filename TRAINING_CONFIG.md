@@ -31,7 +31,7 @@ bash train_grpo_math_tune_ray.sh \
 | `reward_weights_exploit`       | Exploitation-focused vector ($\mathbf{w}_{\mathrm{exploit}}$)     | `[0.0, 1.0, 0.0]`   |
 | `diff_stride`       | Stride for response-level metrics ($s$)      | `40`   |
 | `aux_reward_global_weight`       | Total weight of auxiliary signals  | `1`   |
-| `reward_ema_alpha`       | Exponential Moving Average (EMA) $\alpha$ for each metrics  | `1`   |
+| `reward_ema_alpha`       | Exponential Moving Average (EMA) $\alpha$ for each metrics  | `0.3`   |
 | `adv_shaping_kappa`       | Auxiliary advantage clipping factor  | `2`   |
 | **Motivation Exp Settings** | | |
 | `val_only`       | When trainer.val_only is True, it can trigger the motivation experiment mentioned in the paper. | `False`   |
