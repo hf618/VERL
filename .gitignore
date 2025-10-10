@@ -1,8 +1,10 @@
 # VS Code specific
 .vscode/
+**/.vscode/
 
 # Python cache
 __pycache__/
+**/__pycache__/
 *.pyc
 *.pyo
 *.pyd
