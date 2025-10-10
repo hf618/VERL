@@ -4,7 +4,7 @@ This document provides a detailed explanation of the experiment settings availab
 
 ## Experiment Settings
 
-These variables are located at the end of the `train.sh` script and control the model, data, and training parameters. The complete parameters are located in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml)
+Some key variables are located at the end of the `train.sh` script and control the model, data, and training parameters. The complete parameters are located in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml)
 
 ```sh
 bash train_grpo_math_tune_ray.sh \
