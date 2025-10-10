@@ -4,7 +4,7 @@ This document provides a detailed explanation of the experiment settings availab
 
 ## Experiment Settings
 
-These variables are located at the end of the `train.sh` script and control the model, data, and training parameters.
+These variables are located at the end of the `train.sh` script and control the model, data, and training parameters. The complete parameters are located in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml)
 
 ```sh
 bash train_grpo_math_tune_ray.sh \
@@ -33,3 +33,6 @@ bash train_grpo_math_tune_ray.sh \
 | `aux_reward_global_weight`       | Total weight of auxiliary signals  | `1`   |
 | `reward_ema_alpha`       | Exponential Moving Average (EMA) $\alpha$ for each metrics  | `1`   |
 | `adv_shaping_kappa`       | Auxiliary advantage clipping factor  | `2`   |
+| `val_only`       | When trainer.val_only is True, it can trigger the motivation experiment mentioned in the paper. and  | `False`   |
+| `motivation_mode`| Choices: disable, exploit, explore, allin | `allin`   |
+| `plot_x_metrics` & `plot_y_metrics` | Selected metrics calculation, details can be found in [val_only.py](verl/trainer/ppo/val_only.py) | `allin`   |
