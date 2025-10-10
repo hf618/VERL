@@ -41,7 +41,7 @@ Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the 
 <!-- - [2023/06/13] We release all prompts used in the SwS framework in <a href="https://github.com/MasterVito/SwS/tree/master/prompts"><b>prompts</b></a>.
 - [2023/06/13] We update the demo set of synthetic problems from SwS in <a href="https://github.com/MasterVito/SwS/tree/master/datasets"><b>datasets</b></a>, including 500 samples for each model and category. You can also find them in <a href="https://huggingface.co/datasets/MasterVito/SwS-Demo-Dataset"><b>Demo Dataset</b></a>. -->
 - [2025/10/10] **We provide the full code for training and evaluation for Velocity-Exploiting Rank-Learning.**
-- [2025/9/28] Our paper, repository, website released.
+- [2025/09/28] Our paper, repository, website released.
 
 <!-- <br> -->
 
