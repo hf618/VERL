@@ -18,4 +18,4 @@ dist/
 build/
 
 # Local environment variables
-.env
+.envtrain1.sh
