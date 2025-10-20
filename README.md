@@ -6,7 +6,6 @@ Velocity-Exploiting Rank-Learning (VERL)</span>
 
 <div align="center">
 
-
 </div>
 
 <p align="center">
@@ -14,8 +13,6 @@ Velocity-Exploiting Rank-Learning (VERL)</span>
   <a href="https://arxiv.org/abs/2509.23808"><b>[📜 Paper]</b></a> •
   <a href="https://github.com/hf618/VERL"><b>[🐱 GitHub]</b></a>
 </p>
-
-
 
 <p align="center">
 Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the Exploration-Exploitation Trade-off: A Hidden State Approach for LLM Reasoning in RLVR</a>"
@@ -30,16 +27,15 @@ Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the 
     </em>
 </p>
 
-
-
-
 <!-- <br> -->
 
 ## 🔥 News
 
 <!-- - [2023/10/13] 🔥🔥🔥 We release a demo for ToRA at [🐯 Gradio](https://9557c5365a6f44dc84.gradio.live), try it out!!! -->
+
 <!-- - [2023/06/13] We release all prompts used in the SwS framework in <a href="https://github.com/MasterVito/SwS/tree/master/prompts"><b>prompts</b></a>.
 - [2023/06/13] We update the demo set of synthetic problems from SwS in <a href="https://github.com/MasterVito/SwS/tree/master/datasets"><b>datasets</b></a>, including 500 samples for each model and category. You can also find them in <a href="https://huggingface.co/datasets/MasterVito/SwS-Demo-Dataset"><b>Demo Dataset</b></a>. -->
+
 - [2025/10/10] **We provide the full code for training and evaluation for Velocity-Exploiting Rank-Learning.**
 - [2025/09/28] Our paper, repository, website released.
 
@@ -48,6 +44,37 @@ Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the 
 ## 👽 Analysis, Method, Results
 
 For a brief description, please refer to our [Project Page](https://hf618.github.io/VERL.github.io/); for a detailed description, please refer to the [Paper](https://arxiv.org/abs/2509.23808).
+
+## 🔧Key Implementations
+
+VERL extends [veRL](https://github.com/volcengine/verl) with specific components across the following modules:
+
+**[`verl/trainer/main_ppo.py`](verl/trainer/main_ppo.py) & [`verl/trainer/reward_manager_versions.py`](verl/trainer/reward_manager_versions.py)**
+
+- Main entry point with ray initialization
+- `RewardManager` for reward distribution
+
+**[`verl/trainer/metrics_calculator.py`](verl/trainer/metrics_calculator.py) & [`verl/trainer/metrics_utils.py`](verl/trainer/metrics_utils.py)**
+
+- `RepresentationMetricsCalculator` for metrics calculation
+- Hidden states metrics in [`metrics_utils.py`](verl/trainer/metrics_utils.py)
+
+**[`verl/trainer/ppo/ray_trainer.py`](verl/trainer/ppo/ray_trainer.py)**
+
+- Main RL training loop: data loading, LLM rollout, model updates, evaluation, checkpointing
+- RL algorithm-specific advantage computation
+
+**[`verl/workers/fsdp_workers.py`](verl/workers/fsdp_workers.py)**
+
+- Source of core functions called in `ray_trainer.py`
+- LLM model/optimizer initialization, `generate_sequences`, `update_actor`
+
+VERL extends [vllm](https://github.com/vllm-project/vllm) with specific components across the following folder:
+
+**[`hidden_vllm/`](hidden_vllm/)**
+
+- Added the hidden states extraction feature
+- Modified from the low-level LLM model classes all the way up to the worker
 
 ## 🚀 Quick Start
 
@@ -66,7 +93,7 @@ pip3 install -r requirements.txt
 
 ### ⚡️ Training
 
-We also open-source our complete training scripts for the community. We follow the training data used in [simpleRL-reason](https://github.com/hkust-nlp/simpleRL-reason). 
+We also open-source our complete training scripts for the community. We follow the training data used in [simpleRL-reason](https://github.com/hkust-nlp/simpleRL-reason).
 
 The training process leverages Ray and vLLM for acceleration. So firstly, you need to launch the ray cluster using the command below:
 
@@ -85,7 +112,6 @@ bash train.sh
 ```
 
 For the details of experiment settings, you can refer to [here](TRAINING_CONFIG.md).
-
 
 ### 🪁 Evaluation
 
@@ -114,9 +140,11 @@ If you find this repository helpful, please consider citing our paper:
       url={https://arxiv.org/abs/2509.23808}, 
 }
 ```
+
 <br>
 
 ## 🙏 Acknowledgement
+
 We sincerely appreciate the outstanding work of [veRL](https://github.com/volcengine/verl) and [SimpleRL-Zoo](https://arxiv.org/abs/2503.18892).
 
 ## 🌟 Star History
