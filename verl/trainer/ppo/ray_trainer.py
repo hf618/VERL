@@ -1107,7 +1107,10 @@ class RayPPOTrainer(object):
             test_batch = test_batch.union(test_output_gen_batch)
             if 'avg_log_probs' in self.additional_metric_names:
                 with _timer('testing_log_prob', timing_raw):
-                    log_prob_batch = self.actor_rollout_wg.compute_log_prob(test_batch)
+                    log_prob_input, pad_size = pad_dataproto_to_divisor(
+                        test_batch, self.actor_rollout_wg.world_size)
+                    log_prob_batch_padded = self.actor_rollout_wg.compute_log_prob(log_prob_input)
+                    log_prob_batch = unpad_dataproto(log_prob_batch_padded, pad_size=pad_size)
                     test_batch = test_batch.union(log_prob_batch)
 
             prompt_len = test_batch.batch['prompts'].shape[1]  # such as 512
