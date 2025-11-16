@@ -889,7 +889,7 @@ class RayPPOTrainer(object):
         """
         plot_cfg = self.config.trainer.get('plot_config', {})
         motivation_mode = plot_cfg.get('mode', 'disable')
-        breakpoint()
+        
         if motivation_mode == 'disable': # default
             print("[INFO] Motivation mode is 'disable'. Running standard metrics reporting.")
             return self._validate_and_report_metrics(timing_raw)
@@ -1271,7 +1271,7 @@ class RayPPOTrainer(object):
             metric_dict[f'val/{data_source}/test_incorrect_len'] = np.mean(incorrect_lengths) if incorrect_lengths else 0.0
 
     
-        breakpoint()
+        
         return metric_dict
 
 
@@ -1640,7 +1640,7 @@ class RayPPOTrainer(object):
 
         # perform validation before training 
         # currently, we only support validation using the reward_function.
-        breakpoint()
+        
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
             val_metrics = self._validate()
             pprint(f'Initial validation metrics: {val_metrics}')
