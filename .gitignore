@@ -21,3 +21,4 @@ build/
 
 # Local environment variables
 ./train1.sh
+train.sh
