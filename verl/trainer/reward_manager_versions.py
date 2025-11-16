@@ -241,7 +241,7 @@ class RewardManager():
                                                 self.ema_alpha * reward_tensor_0.sum(dim=-1).float().mean().cpu().item()
             
             for indicator_name in self.indicator_names:
-                metric_key = f'cal/overall/layer_{layer_key}/{indicator_name}/mean'
+                metric_key = f'cal/layer_{layer_key}/{indicator_name}/overall/mean'
                 if metric_key in metrics_old:
                     v = metrics_old[metric_key]
                     self.mids[indicator_name] = (1 - self.ema_alpha) * self.mids[indicator_name] + self.ema_alpha * v
