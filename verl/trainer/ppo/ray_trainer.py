@@ -1584,6 +1584,29 @@ class RayPPOTrainer(object):
                     additional_metrics['response_entropy'] = entropy_values
                 additional_timing['response_entropy'] = additional_timing.get('response_entropy', 0.0) + (time.perf_counter() - start_time)
 
+            if 'avg_response_entropy' in metric_names:
+                start_time = time.perf_counter()
+                responses = batch.batch.get('responses', None)
+                if responses is not None:
+                    batch_size = responses.size(0)
+                    avg_entropy_values = torch.zeros(batch_size, dtype=torch.float32, device=target_device)
+                    for idx in range(batch_size):
+                        mask = response_attention_mask[idx].bool()
+                        valid_tokens = responses[idx][mask]
+                        if valid_tokens.numel() == 0:
+                            continue
+                        token_counts = torch.bincount(valid_tokens.to('cpu'))
+                        probs = token_counts.to(torch.float32)
+                        total = probs.sum()
+                        if total.item() == 0:
+                            continue
+                        probs = probs / total
+                        probs = probs.clamp_min(1e-20)
+                        token_probs = probs[valid_tokens.to('cpu')]
+                        avg_entropy_values[idx] = float((-torch.log(token_probs)).mean())
+                    additional_metrics['avg_response_entropy'] = avg_entropy_values
+                additional_timing['avg_response_entropy'] = additional_timing.get('avg_response_entropy', 0.0) + (time.perf_counter() - start_time)
+
         return additional_metrics, additional_timing
 
     def _merge_additional_metrics_into_results(self, batch: DataProto, additional_metrics: dict):

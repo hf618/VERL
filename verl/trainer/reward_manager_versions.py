@@ -45,6 +45,7 @@ class RewardManager():
                  weights_exploit=None,
                  calculator_enabled=True,
                  add_reward=True,
+                 add_adv=False,
                  modulation_gain=1.5,
                  aux_reward_global_weight=1.0,
                  adv_estimator='grpo',
@@ -63,6 +64,7 @@ class RewardManager():
 
         self.mids = {name: 0.0 for name in self.indicator_names}
         self.add_reward = add_reward
+        self.add_adv = add_adv
         self.calculator_enabled = calculator_enabled
         self.modulation_gain = modulation_gain
         self.epsilon = 1e-8
@@ -102,7 +104,7 @@ class RewardManager():
         layer_key = '1'
 
         # It's only possible to calculate if it's enabled AND it's not the first step (metrics_old exists).
-        use_aux_reward = self.add_reward and self.calculator_enabled and metrics_old
+        use_aux_reward = (self.add_reward or self.add_adv) and self.calculator_enabled and metrics_old
 
         performance_scaling_factor = 1.0 # Default scaling factor for step 1
 
@@ -249,5 +251,3 @@ class RewardManager():
                 "correctness_tensor": correctness_tensor, 
                 "reward_tensor_0": reward_tensor_0,
                 "internal_metrics": internal_metrics}
-
-

@@ -254,6 +254,15 @@ def _calculate_pairwise_rouge_l_on_text(responses: torch.Tensor, masks: torch.Te
             
     return (f1_sum / pair_count) if pair_count > 0 else 0.0
 
+
+def _calculate_avg_response_entropy(responses: torch.Tensor, mask: torch.Tensor, distribution: torch.Tensor) -> float:
+    """Calculate average per-token entropy for a single rollout."""
+    valid_tokens = responses[mask.bool()].to(distribution.device)
+    if valid_tokens.numel() == 0:
+        return 0.0
+    probs = distribution[valid_tokens].clamp_min(1e-20)
+    return (-torch.log(probs)).mean().item()
+
 def _calculate_pairwise_rouge_n_s(responses: torch.Tensor, masks: torch.Tensor, rouge_type: str, tokenizer=None) -> float:
     """
     A general pairwise ROUGE calculation function.
@@ -321,6 +330,7 @@ METRIC_REGISTRY = [
     {'name': 'correctness', 'granularity': 'rollout', 'calculator_func': lambda data, j: data['correctness'][j]},
     {'name': 'avg_log_probs', 'granularity': 'rollout', 'calculator_func': lambda data, j: data['avg_log_probs'][j] if data['avg_log_probs'] is not None else np.nan},
     {'name': 'response_entropy', 'granularity': 'rollout', 'calculator_func': lambda data, j: _calculate_distribution_entropy(data['p1_distributions'][j])},
+    {'name': 'avg_response_entropy', 'granularity': 'rollout', 'calculator_func': lambda data, j: _calculate_avg_response_entropy(data['responses'][j], data['masks'][j], data['p1_distributions'][j])},
     {'name': 'response_confidence', 'granularity': 'rollout', 'calculator_func': lambda data, j: _calculate_distribution_confidence(data['p1_distributions'][j], data['confidence_k'])},
     {'name': 'n_gram_repetition_rate', 'granularity': 'rollout', 'calculator_func': lambda data, j: data['rollout_repetition_rates'][j]},
     {'name': 'response_length', 'granularity': 'rollout', 'calculator_func': lambda data, j: data['rollout_response_lengths'][j]},
