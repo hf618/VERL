@@ -216,7 +216,7 @@ def _calculate_stack_metric(calculator, hidden_states, masks, layer, metric_name
 
     if "diff" in metric_name:
         stacked_hidden_4d = stacked_hidden_3d.unsqueeze(2)
-        results = calculator(hidden_states=stacked_hidden_4d, attention_mask=stacked_mask, compute_diff=True)
+        results, _ = calculator(hidden_states=stacked_hidden_4d, attention_mask=stacked_mask, compute_diff=True)
         value = results.get(layer, {}).get(metric_name)
     else:
         metric_func = next((func for name, func in calculator.selected_metrics if name == metric_name), None)

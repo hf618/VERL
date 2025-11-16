@@ -15,6 +15,7 @@
 Note that we don't combine the main with ray_trainer as ray_trainer is used by other main.
 """
 import os
+import ast
 import ray
 from ray.util.actor_pool import ActorPool
 from .metrics_calculator import RepresentationMetricsCalculator
@@ -40,6 +41,60 @@ import hydra
 
 import numpy as np
 import random
+
+
+def _to_python_list(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            return [value]
+        if isinstance(parsed, (list, tuple)):
+            return list(parsed)
+        return [parsed]
+    if isinstance(value, list):
+        return value
+    return list(value)
+
+
+def _strip_diff_suffix(indicator_name: str) -> str:
+    if indicator_name.endswith(" diff 2"):
+        return indicator_name[:-len(" diff 2")]
+    if indicator_name.endswith(" diff"):
+        return indicator_name[:-len(" diff")]
+    return indicator_name
+
+
+def _validate_reward_configuration(config, calculator):
+    indicator_names = _to_python_list(config.reward_manager.indicator_names)
+    weights = _to_python_list(config.reward_manager.weights)
+    weights_exploit = _to_python_list(config.reward_manager.weights_exploit)
+
+    expected_len = len(indicator_names)
+    if expected_len == 0:
+        return
+
+    if len(weights) != expected_len:
+        raise ValueError(
+            f"reward_indicator_names has {expected_len} entries but reward_weights has {len(weights)}."
+        )
+    if len(weights_exploit) != expected_len:
+        raise ValueError(
+            f"reward_indicator_names has {expected_len} entries but reward_weights_exploit has {len(weights_exploit)}."
+        )
+
+    selectable_metrics = {name for name, _ in calculator.selected_metrics}
+    additional_metrics = set(_to_python_list(config.trainer.get('metric_indices_add', [])))
+    for indicator in indicator_names:
+        base_name = _strip_diff_suffix(indicator)
+        if base_name not in selectable_metrics and \
+           base_name not in additional_metrics and \
+           indicator not in additional_metrics:
+            raise ValueError(
+                f"Indicator '{indicator}' requires base metric '{base_name}' to be enabled via --metric_indices."
+            )
 def set_global_seed(seed):
     """Set all relevant random number seeds to ensure reproducibility"""
     random.seed(seed)
@@ -91,7 +146,7 @@ def main_task(config, compute_score=None):
     # instantiate tokenizer
     from verl.utils import hf_tokenizer
     tokenizer = hf_tokenizer(local_path)
-
+    
     # define worker classes
     if config.actor_rollout_ref.actor.strategy == 'fsdp':
         assert config.actor_rollout_ref.actor.strategy == config.critic.strategy
@@ -158,6 +213,7 @@ def main_task(config, compute_score=None):
                                                  diff_calculator_method=config.calculator.diff_calculator_method
                                         )
 
+    _validate_reward_configuration(config, calculator)
 
     reward_fn = RewardManager(tokenizer=tokenizer, 
                               num_examine=0, 

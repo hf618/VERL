@@ -16,7 +16,10 @@ FSDP PPO Trainer with Ray-based single controller.
 This trainer supports model-agonistic model initialization with huggingface
 """
 import os
+import ast
 import uuid
+import time
+import psutil
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -33,7 +36,7 @@ from verl.single_controller.base import Worker
 from verl.single_controller.ray import RayResourcePool, RayWorkerGroup, RayClassWithInitArgs
 from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.val_only import *
+from verl.trainer.ppo import val_only as val_only_utils
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
 from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
@@ -178,6 +181,25 @@ def reduce_metrics(metrics: dict):
     for key, val in metrics.items():
         metrics[key] = np.mean(val)
     return metrics
+
+
+def _ensure_sequence(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            return [value]
+        if isinstance(parsed, (list, tuple)):
+            return list(parsed)
+        return [parsed]
+    if isinstance(value, list):
+        return value
+    try:
+        return list(value)
+    except TypeError:
+        return [value]
 
 
 def _compute_response_info(batch):
@@ -403,8 +425,40 @@ def compute_timing_metrics(batch, timing_raw):
     }
 
 
+def compute_memory_metrics(batch, memory_raw, metric_profile=None):
+    if not memory_raw:
+        return {}
 
-def compute_calculator_metrics(results, correctness_tensor, mid_vs=None):
+    response_info = _compute_response_info(batch)
+    num_prompt_tokens = torch.sum(response_info['prompt_length']).item()
+    num_response_tokens = torch.sum(response_info['response_length']).item()
+    num_overall_tokens = num_prompt_tokens + num_response_tokens
+
+    num_tokens_of_section = {
+        **{
+            name: num_response_tokens for name in ['gen', 'cal', 'cal_global']
+        },
+        **{
+            name: num_overall_tokens for name in ['ref', 'values', 'adv', 'update_critic', 'update_actor']
+        },
+    }
+
+    metrics = {}
+    for name, value in memory_raw.items():
+        metrics[f'mem_gb/{name}'] = value / 1024.0
+        if name in num_tokens_of_section and num_tokens_of_section[name] > 0:
+            metrics[f'mem_per_token_mb/{name}'] = value / num_tokens_of_section[name]
+
+    if metric_profile:
+        for metric_name, peak_mb in metric_profile.items():
+            metrics[f'mem_gb/cal_metric/{metric_name}'] = peak_mb / 1024.0
+            if num_response_tokens > 0:
+                metrics[f'mem_per_token_mb/cal_metric/{metric_name}'] = peak_mb / num_response_tokens
+    return metrics
+
+
+
+def compute_calculator_metrics(results, correctness_tensor, mid_vs=None, additional_metrics=None):
     stats_dict = {}
 
     if not isinstance(correctness_tensor, torch.Tensor):
@@ -426,44 +480,60 @@ def compute_calculator_metrics(results, correctness_tensor, mid_vs=None):
         stats_dict["cal/accuracy"] = stats_dict["cal/num_correct"] / total_samples
 
 
-    for layer_key, indicators in results.items():
+    processed_results = {layer: dict(indicators) for layer, indicators in results.items()}
+    if additional_metrics:
+        target_layer = next(iter(processed_results.keys()), "1")
+        processed_results.setdefault(target_layer, {})
+        for metric_name, metric_values in additional_metrics.items():
+            processed_results[target_layer][metric_name] = metric_values
+
+    for layer_key, indicators in processed_results.items():
         for indicator_name, values in indicators.items():
 
             if not isinstance(values, torch.Tensor):
                 values = torch.tensor(values)
 
 
-            stats_dict[f"cal/overall/layer_{layer_key}/{indicator_name}/max"] = torch.max(values).item()
-            stats_dict[f"cal/overall/layer_{layer_key}/{indicator_name}/min"] = torch.min(values).item()
-            stats_dict[f"cal/overall/layer_{layer_key}/{indicator_name}/mean"] = torch.mean(values).item()
+            stats_dict[f"cal/layer_{layer_key}/{indicator_name}/overall/max"] = torch.max(values).item()
+            stats_dict[f"cal/layer_{layer_key}/{indicator_name}/overall/min"] = torch.min(values).item()
+            stats_dict[f"cal/layer_{layer_key}/{indicator_name}/overall/mean"] = torch.mean(values).item()
 
 
             correct_values = values[correct_indices]
             if correct_values.numel() > 0: 
-                stats_dict[f"cal/correct/layer_{layer_key}/{indicator_name}/max"] = torch.max(correct_values).item()
-                stats_dict[f"cal/correct/layer_{layer_key}/{indicator_name}/min"] = torch.min(correct_values).item()
-                stats_dict[f"cal/correct/layer_{layer_key}/{indicator_name}/mean"] = torch.mean(correct_values).item()
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/correct/max"] = torch.max(correct_values).item()
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/correct/min"] = torch.min(correct_values).item()
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/correct/mean"] = torch.mean(correct_values).item()
             else:
 
-                stats_dict[f"cal/correct/layer_{layer_key}/{indicator_name}/max"] = 0.0
-                stats_dict[f"cal/correct/layer_{layer_key}/{indicator_name}/min"] = 0.0
-                stats_dict[f"cal/correct/layer_{layer_key}/{indicator_name}/mean"] = 0.0
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/correct/max"] = 0.0
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/correct/min"] = 0.0
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/correct/mean"] = 0.0
 
 
             incorrect_values = values[incorrect_indices]
             if incorrect_values.numel() > 0:
-                stats_dict[f"cal/incorrect/layer_{layer_key}/{indicator_name}/max"] = torch.max(incorrect_values).item()
-                stats_dict[f"cal/incorrect/layer_{layer_key}/{indicator_name}/min"] = torch.min(incorrect_values).item()
-                stats_dict[f"cal/incorrect/layer_{layer_key}/{indicator_name}/mean"] = torch.mean(incorrect_values).item()
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/incorrect/max"] = torch.max(incorrect_values).item()
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/incorrect/min"] = torch.min(incorrect_values).item()
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/incorrect/mean"] = torch.mean(incorrect_values).item()
             else:
 
-                stats_dict[f"cal/incorrect/layer_{layer_key}/{indicator_name}/max"] = 0.0
-                stats_dict[f"cal/incorrect/layer_{layer_key}/{indicator_name}/min"] = 0.0
-                stats_dict[f"cal/incorrect/layer_{layer_key}/{indicator_name}/mean"] = 0.0
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/incorrect/max"] = 0.0
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/incorrect/min"] = 0.0
+                stats_dict[f"cal/layer_{layer_key}/{indicator_name}/incorrect/mean"] = 0.0
 
     
 
     return stats_dict
+
+
+def _capture_gpu_memory_mb():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        return torch.cuda.memory_allocated() / (1024 ** 2)
+    # fall back to process RSS (CPU) so metrics still logged
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / (1024 ** 2)
 def concatenate_results(calculater_lst):
     """
     Concatenate multiple results dictionaries along the batch dimension.
@@ -532,6 +602,7 @@ class RayPPOTrainer(object):
         self.reward_fn = reward_fn
         self.val_reward_fn = val_reward_fn
         self.calculator = calculator
+        self.additional_metric_names = _ensure_sequence(self.config.trainer.get('metric_indices_add', []))
 
         self.hybrid_engine = config.actor_rollout_ref.hybrid_engine
         assert self.hybrid_engine, 'Currently, only support hybrid engine'
@@ -750,7 +821,7 @@ class RayPPOTrainer(object):
                 fake_batch_hidden_3d = hidden_states_prompt[j:j+1, :, :]
                 fake_batch_mask = masks_prompt[j:j+1, :]
                 fake_batch_hidden_4d = fake_batch_hidden_3d.unsqueeze(2)
-                rollout_results = self.calculator(hidden_states=fake_batch_hidden_4d, attention_mask=fake_batch_mask, compute_diff=diff_metrics_requested)
+                rollout_results, _ = self.calculator(hidden_states=fake_batch_hidden_4d, attention_mask=fake_batch_mask, compute_diff=diff_metrics_requested)
                 all_rollout_calc_results.append(rollout_results.get(x_layer, {}))
 
 
@@ -758,9 +829,9 @@ class RayPPOTrainer(object):
         rollout_embeddings_tensor = torch.stack(rollout_embeddings) if rollout_embeddings else torch.empty(0, hidden_states_prompt.shape[-1], device=hidden_states_prompt.device)
 
 
-        all_p1_distributions = _get_response_token_distributions(responses_prompt, masks_prompt, rollout_n, vocab_size)
+        all_p1_distributions = val_only_utils._get_response_token_distributions(responses_prompt, masks_prompt, rollout_n, vocab_size)
 
-        stacked_p1_distribution = _get_stacked_token_distribution(responses_prompt, masks_prompt, vocab_size)
+        stacked_p1_distribution = val_only_utils._get_stacked_token_distribution(responses_prompt, masks_prompt, vocab_size)
 
     
         confidence_k = self.config.trainer.get('confidence_metric_config', {}).get('k', 5) # 默认 k=5
@@ -772,7 +843,7 @@ class RayPPOTrainer(object):
         all_rollout_repetition_rates = []
         for j in range(rollout_n):
             valid_tokens = responses_prompt[j, masks_prompt[j, :].bool()].tolist()
-            rate = _calculate_n_gram_repetition_rate(valid_tokens, repetition_n)
+            rate = val_only_utils._calculate_n_gram_repetition_rate(valid_tokens, repetition_n)
             all_rollout_repetition_rates.append(rate)
 
         all_rollout_response_lengths = [masks_prompt[j, :].bool().sum().item() for j in range(rollout_n)]
@@ -794,7 +865,7 @@ class RayPPOTrainer(object):
         }
         
  
-        for metric_info in METRIC_REGISTRY:
+        for metric_info in val_only_utils.METRIC_REGISTRY:
             metric_name = metric_info['name']
             if metric_name in all_metric_names:
                 granularity = metric_info['granularity']
@@ -818,7 +889,7 @@ class RayPPOTrainer(object):
         """
         plot_cfg = self.config.trainer.get('plot_config', {})
         motivation_mode = plot_cfg.get('mode', 'disable')
-
+        breakpoint()
         if motivation_mode == 'disable': # default
             print("[INFO] Motivation mode is 'disable'. Running standard metrics reporting.")
             return self._validate_and_report_metrics(timing_raw)
@@ -1034,6 +1105,10 @@ class RayPPOTrainer(object):
             print('validation generation end')
 
             test_batch = test_batch.union(test_output_gen_batch)
+            if 'avg_log_probs' in self.additional_metric_names:
+                with _timer('testing_log_prob', timing_raw):
+                    log_prob_batch = self.actor_rollout_wg.compute_log_prob(test_batch)
+                    test_batch = test_batch.union(log_prob_batch)
 
             prompt_len = test_batch.batch['prompts'].shape[1]  # such as 512
             response_attention_mask = test_batch.batch['attention_mask'][:, prompt_len:]
@@ -1045,14 +1120,17 @@ class RayPPOTrainer(object):
 
                     diff_stride_val = self.config.calculator.get('diff_stride', 20)
                     # test_batch.batch['hidden_states_decode'] [10, 2048, 2, 896]
-                    
         
-                    test_batch.batch['calculator_results'] = self.calculator(
+
+                    test_batch.batch['calculator_results'], _ = self.calculator(
                         hidden_states=test_batch.batch['hidden_states_decode'],
                         attention_mask=response_attention_mask,
                         compute_diff=True,
                         diff_stride=diff_stride_val
                     )
+                    if self.additional_metric_names:
+                        val_additional_metrics, _ = self._collect_additional_metrics(test_batch)
+                        self._merge_additional_metrics_into_results(test_batch, val_additional_metrics)
                     calculater_lst.append(test_batch.batch['calculator_results'])
 
                     with _timer('testing_cal_global', timing_raw):
@@ -1147,13 +1225,13 @@ class RayPPOTrainer(object):
 
 
         for data_source, rewards in data_source_reward.items():
-            metric_dict[f'val/test_score/{data_source}'] = np.mean(rewards)
+            metric_dict[f'val/{data_source}/test_score'] = np.mean(rewards)
         
         for data_source, rewards in data_source_reward_0.items():
-            metric_dict[f'val/test_score_0/{data_source}'] = np.mean(rewards)
+            metric_dict[f'val/{data_source}/test_score_0'] = np.mean(rewards)
 
         for data_source, correctnesses in data_source_correctness.items():
-            metric_dict[f'val/test_correctness/{data_source}'] = np.mean(correctnesses)
+            metric_dict[f'val/{data_source}/test_correctness'] = np.mean(correctnesses)
 
         if aggregated_metrics:
 
@@ -1168,29 +1246,29 @@ class RayPPOTrainer(object):
             for ds_name, ds_data in calc_dict.items():
                 for layer, layer_data in ds_data.items():
                     for metric, values in layer_data.items():
-                        key = f"val/{prefix}/{ds_name}/layer_{layer}/{metric}"
+                        key = f"val/{ds_name}/layer_{layer}/{metric}/{prefix}"
                         if len(values) > 0:
                             metric_dict[key] = np.nanmean(values) if np.isnan(values).any() else np.mean(values)
                         else:
                             metric_dict[key] = 0.0
 
         if calculator_cat:
-            fill_metrics("cal_correct", data_source_calculator_correct)
-            fill_metrics("cal_incorrect", data_source_calculator_incorrect)
-            fill_metrics("cal_overall", data_source_calculator_overall)
+            fill_metrics("correct", data_source_calculator_correct)
+            fill_metrics("incorrect", data_source_calculator_incorrect)
+            fill_metrics("overall", data_source_calculator_overall)
 
 
         for data_source, lengths in data_source_length.items():
-            metric_dict[f'val/test_overall_len/{data_source}'] = np.mean(lengths)
+            metric_dict[f'val/{data_source}/test_overall_len'] = np.mean(lengths)
 
             correct_lengths = [length for length, correct in zip(lengths, data_source_correctness[data_source]) if correct == 1]
             incorrect_lengths = [length for length, correct in zip(lengths, data_source_correctness[data_source]) if correct == 0]
             
-            metric_dict[f'val/test_correct_len/{data_source}'] = np.mean(correct_lengths) if correct_lengths else 0.0
-            metric_dict[f'val/test_incorrect_len/{data_source}'] = np.mean(incorrect_lengths) if incorrect_lengths else 0.0
+            metric_dict[f'val/{data_source}/test_correct_len'] = np.mean(correct_lengths) if correct_lengths else 0.0
+            metric_dict[f'val/{data_source}/test_incorrect_len'] = np.mean(incorrect_lengths) if incorrect_lengths else 0.0
 
     
-
+        breakpoint()
         return metric_dict
 
 
@@ -1430,7 +1508,7 @@ class RayPPOTrainer(object):
 
         should_compute_diff = self.config.calculator.get('compute_cumulative_global_metrics', False)
         
-        all_global_metrics = self.calculator(
+        all_global_metrics, _ = self.calculator(
             aggregated_hidden,
             aggregated_mask,
             compute_diff=should_compute_diff,
@@ -1454,6 +1532,67 @@ class RayPPOTrainer(object):
                     metrics_to_return[layer][new_name] = value.item()
         
         return metrics_to_return
+
+    def _collect_additional_metrics(self, batch: DataProto) -> tuple[dict, dict]:
+        metric_names = self.additional_metric_names
+        if len(metric_names) == 0:
+            return {}, {}
+
+        if 'prompts' not in batch.batch or 'attention_mask' not in batch.batch:
+            return {}
+
+        prompt_len = batch.batch['prompts'].shape[1]
+        response_attention_mask = batch.batch['attention_mask'][:, prompt_len:]
+        additional_metrics = {}
+        additional_timing = {}
+        target_device = batch.batch['responses'].device
+
+        with torch.no_grad():
+            if 'avg_log_probs' in metric_names:
+                start_time = time.perf_counter()
+                log_probs = batch.batch.get('old_log_probs', None)
+                if log_probs is not None:
+                    if log_probs.size(1) != response_attention_mask.size(1):
+                        log_probs = log_probs[:, -response_attention_mask.size(1):]
+                    mask_sum = response_attention_mask.sum(dim=-1).float()
+                    masked_log_probs = (log_probs * response_attention_mask).sum(dim=-1) / (mask_sum + 1e-8)
+                    additional_metrics['avg_log_probs'] = masked_log_probs.detach()
+                additional_timing['avg_log_probs'] = additional_timing.get('avg_log_probs', 0.0) + (time.perf_counter() - start_time)
+
+            if 'response_entropy' in metric_names:
+                start_time = time.perf_counter()
+                responses = batch.batch.get('responses', None)
+                if responses is not None:
+                    batch_size = responses.size(0)
+                    entropy_values = torch.zeros(batch_size, dtype=torch.float32, device=target_device)
+                    for idx in range(batch_size):
+                        mask = response_attention_mask[idx].bool()
+                        valid_tokens = responses[idx][mask]
+                        if valid_tokens.numel() == 0:
+                            continue
+                        token_counts = torch.bincount(valid_tokens.to('cpu'))
+                        probs = token_counts.to(torch.float32)
+                        total = probs.sum()
+                        if total.item() == 0:
+                            continue
+                        probs = probs / total
+                        probs = probs.clamp_min(1e-20)
+                        entropy_values[idx] = float(-(probs * torch.log(probs)).sum())
+                    additional_metrics['response_entropy'] = entropy_values
+                additional_timing['response_entropy'] = additional_timing.get('response_entropy', 0.0) + (time.perf_counter() - start_time)
+
+        return additional_metrics, additional_timing
+
+    def _merge_additional_metrics_into_results(self, batch: DataProto, additional_metrics: dict):
+        if not additional_metrics:
+            return
+        calculator_results = batch.batch.get('calculator_results')
+        if calculator_results is None:
+            return
+        target_layer = '1' if '1' in calculator_results else next(iter(calculator_results.keys()), None)
+        if target_layer is None:
+            return
+        calculator_results[target_layer].update(additional_metrics)
 
     def fit(self):
         """
@@ -1498,7 +1637,7 @@ class RayPPOTrainer(object):
 
         # perform validation before training 
         # currently, we only support validation using the reward_function.
-
+        breakpoint()
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
             val_metrics = self._validate()
             pprint(f'Initial validation metrics: {val_metrics}')
@@ -1517,6 +1656,8 @@ class RayPPOTrainer(object):
                 
                 metrics = {}
                 timing_raw = {}
+                memory_raw = {}
+                metric_profile_step = {}
 
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
 
@@ -1575,6 +1716,7 @@ class RayPPOTrainer(object):
                     
 
                     # 判断是否用 hidden_states_decode 计算 metrics
+                    mem_before_cal = _capture_gpu_memory_mb()
                     with _timer('cal', timing_raw):
                         if use_calculator and 'hidden_states_decode' in batch.batch:
                             
@@ -1586,27 +1728,36 @@ class RayPPOTrainer(object):
 
 
                             # 1. 执行原有的“单样本”指标计算，结果存入 batch 供后续处理
-                            batch.batch['calculator_results'] = self.calculator(
+                            batch.batch['calculator_results'], calc_metric_profile = self.calculator(
                                 hidden_states=batch.batch['hidden_states_decode'],
                                 attention_mask=response_attention_mask,
                                 compute_diff=True,
                                 diff_stride=diff_stride_train
                             )
+                            metric_profile_step.update(calc_metric_profile)
 
+                            mem_before_cal_global = _capture_gpu_memory_mb()
                             with _timer('cal_global', timing_raw):
                                 train_stride = self.config.calculator.get('global_diff_stride_train', 1)
                                 aggregated_metrics = self._compute_aggregated_metrics(batch.batch['hidden_states_decode'], response_attention_mask, stride=train_stride)
 
                         
-                                # 将返回的指标添加 'train/' 前缀并更新到主 metrics 字典
+                                # 将返回的指标添加到 cal/ 命名空间，保持原有指标名不变
                                 for layer, layer_metrics in aggregated_metrics.items():
                                     for name, value in layer_metrics.items():
-                                        log_key = f"train/layer_{layer}/{name}"
+                                        log_key = f"cal/layer_{layer}/{name}"
                                         metrics[log_key] = value
+
+                            mem_after_cal_global = _capture_gpu_memory_mb()
+                            if mem_before_cal_global is not None and mem_after_cal_global is not None:
+                                memory_raw['cal_global'] = max(memory_raw.get('cal_global', 0.0), mem_before_cal_global, mem_after_cal_global)
 
                             # del batch.batch['hidden_states_decode']
 
-                    
+                    mem_after_cal = _capture_gpu_memory_mb()
+                    if mem_before_cal is not None and mem_after_cal is not None:
+                        memory_raw['cal'] = max(memory_raw.get('cal', 0.0), mem_before_cal, mem_after_cal)
+
                     if self.config.trainer.remove_clip:
                         batch.batch['attention_mask'] = adjusted_attention_mask
 
@@ -1629,6 +1780,12 @@ class RayPPOTrainer(object):
                     with _timer('old_log_prob', timing_raw):
                         old_log_prob = self.actor_rollout_wg.compute_log_prob(batch)
                         batch = batch.union(old_log_prob)
+
+                    if self.additional_metric_names and 'calculator_results' in batch.batch:
+                        extra_metrics, extra_timing = self._collect_additional_metrics(batch)
+                        self._merge_additional_metrics_into_results(batch, extra_metrics)
+                        for name, elapsed in extra_timing.items():
+                            metric_profile_step[name] = metric_profile_step.get(name, 0.0) + elapsed
 
                     if self.use_reference_policy:
                         # compute reference log_prob
@@ -1700,7 +1857,13 @@ class RayPPOTrainer(object):
                     metrics.update(compute_response_metrics(batch=batch))
 
                     if use_calculator and 'calculator_results' in batch.batch:
-                        metrics.update(compute_calculator_metrics(batch.batch['calculator_results'], batch.batch['correctness'], self.reward_fn.mids))
+                        metrics.update(
+                            compute_calculator_metrics(
+                                batch.batch['calculator_results'],
+                                batch.batch['correctness'],
+                                self.reward_fn.mids
+                            )
+                        )
                         # del batch.batch['calculator_results']
 
                     # update critic
@@ -1737,6 +1900,17 @@ class RayPPOTrainer(object):
                 # collect metrics
                 metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
                 metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+                metrics.update(compute_memory_metrics(
+                    batch=batch,
+                    memory_raw=memory_raw,
+                    metric_profile={k: metric_profile_step.get(k, 0.0) for k in metric_profile_step}
+                ))
+                if metric_profile_step:
+                    total_response_tokens = torch.sum(response_info['response_length']).item()
+                    for name, elapsed in metric_profile_step.items():
+                        metrics[f'timing_s/cal_metric/{name}'] = elapsed
+                        if total_response_tokens > 0:
+                            metrics[f'timing_per_token_ms/cal_metric/{name}'] = (elapsed * 1000) / total_response_tokens
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)

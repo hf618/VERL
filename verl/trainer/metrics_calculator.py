@@ -78,28 +78,34 @@ class RepresentationMetricsCalculator():
         with torch.inference_mode():
             batch_size, seq_len, num_layers, hidden_dim = hidden_states.shape
             results = {}
+            metric_profile = {}
             
             for layer_idx in range(num_layers):
                 layer_key = str(layer_idx + 1)
                 layer_hidden = hidden_states[:, :, layer_idx, :].contiguous()
 
                 # Compute all sequence-level metrics as usual
-                base_metrics = {
-                    name: func(layer_hidden, attention_mask)
-                    for name, func in self.selected_metrics
-                }
+                base_metrics = {}
+                for name, func in self.selected_metrics:
+                    start_time = time.perf_counter()
+                    base_metrics[name] = func(layer_hidden, attention_mask)
+                    elapsed = time.perf_counter() - start_time
+                    metric_profile[name] = metric_profile.get(name, 0.0) + elapsed
                 
                 per_stride_diffs = {}
                 if compute_diff:
-                    final_diffs, per_stride_diffs = self.calculate_metric_diff(
+                    start_diff = time.perf_counter()
+                    final_diffs, per_stride_diffs, diff_metric_timing = self.calculate_metric_diff(
                         layer_hidden, attention_mask, diff_stride
                     )
                     base_metrics.update(final_diffs)
+                    for diff_name, elapsed in diff_metric_timing.items():
+                        metric_profile[diff_name] = metric_profile.get(diff_name, 0.0) + elapsed
                 
                 results[layer_key] = base_metrics
                 self._free_memory()
                 
-            return results
+            return results, metric_profile
 
     def _aggregate_diffs(self, all_per_stride_diffs, batch_size, device, selected_metric_names):
         """Auxiliary function: Aggregate the final diff tensors from per-stride results."""
@@ -170,6 +176,8 @@ class RepresentationMetricsCalculator():
         selected_metric_names = [name for name, _ in self.selected_metrics]
         
         all_per_stride_diffs = []
+        diff_metric_timing = {f"{name} diff": 0.0 for name in selected_metric_names}
+        diff_metric_timing.update({f"{name} diff 2": 0.0 for name in selected_metric_names})
 
 
         if self.diff_calculator_method == 'optimized':
@@ -196,6 +204,13 @@ class RepresentationMetricsCalculator():
             
     
         device = hidden_states.device
+        for per_stride_diffs_i in all_per_stride_diffs:
+            for metric_name in selected_metric_names:
+                diff_metric_timing[f"{metric_name} diff"] += per_stride_diffs_i.get(f"{metric_name} diff_timing", 0.0)
+                diff_metric_timing[f"{metric_name} diff 2"] += per_stride_diffs_i.get(f"{metric_name} diff 2_timing", 0.0)
+                per_stride_diffs_i.pop(f"{metric_name} diff_timing", None)
+                per_stride_diffs_i.pop(f"{metric_name} diff 2_timing", None)
+    
         final_diffs = self._aggregate_diffs(all_per_stride_diffs, batch_size, device, selected_metric_names)
 
         per_stride_diffs = {f"{name} diff": [[] for _ in range(batch_size)] for name in selected_metric_names}
@@ -205,7 +220,7 @@ class RepresentationMetricsCalculator():
                 if key in all_per_stride_diffs[i]:
                     per_stride_diffs[key][i] = all_per_stride_diffs[i][key]
 
-        return final_diffs, per_stride_diffs
+        return final_diffs, per_stride_diffs, diff_metric_timing
     
 
     def _free_tensors(self, tensors):
@@ -314,5 +329,3 @@ class RepresentationMetricsCalculator():
     
 
     
-
-

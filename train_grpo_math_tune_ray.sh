@@ -69,6 +69,7 @@ REWARD_INDICATOR_NAMES=""
 REWARD_WEIGHTS=""
 REWARD_WEIGHTS_EXPLOIT=""
 METRIC_INDICES="[0,1,2]" 
+METRIC_INDICES_ADD=""
 ENABLE_CALCULATOR=True
 DIFF_STRIDE=40
 ADD_REWARD=False
@@ -93,13 +94,14 @@ MODULATION_GAIN=2.0
 CRITIC_MODEL_PATH=""
 AUX_REWARD_GLOBAL_WEIGHT=1.0 
 REWARD_EMA_ALPHA=""
+HYPOTHESIS_TYPE=""
 
 
 # Validation configurations
 VAL_BEFORE_TRAIN=True
 VAL_SAMPLE_SIZE=-1 # -1 means use the entire validation set
-VAL_ONLY=False # Set True to run motivation experiments
-MOTIVATION_MODE="allin" # Choices: disable, exploit, explore, allin
+VAL_ONLY=False # Set True to run motivation experiments only
+MOTIVATION_MODE="disable" # Choices: disable, exploit, explore, allin
 PLOT_X_METRICS="Effective Rank"
 PLOT_Y_METRICS="test_score_0"
 PLOT_LAYER=1 
@@ -153,10 +155,12 @@ while [[ "$#" -gt 0 ]]; do
     --add_adv) ADD_ADV="$2"; shift 2 ;;
     --compute_log_effective_rank) COMPUTE_LOG_EFFECTIVE_RANK="$2"; shift 2 ;;
     --metric_indices) METRIC_INDICES="$2"; shift 2 ;;
+    --metric_indices_add) METRIC_INDICES_ADD="$2"; shift 2 ;;
     --modulation_gain) MODULATION_GAIN="$2"; SUFFIX_PARTS+="_mgain$2"; shift 2 ;;
     --adv_estimator) ADV_ESTIMATOR="$2"; SUFFIX_PARTS+="_$2"; shift 2 ;;
     --critic_model_path) CRITIC_MODEL_PATH="$2"; shift 2 ;; 
     --aux_reward_global_weight) AUX_REWARD_GLOBAL_WEIGHT="$2"; SUFFIX_PARTS+="_auxgw$2"; shift 2 ;;
+    --hypothesis_type) HYPOTHESIS_TYPE="$2"; shift 2 ;;
     --return_hidden_states) RETURN_HIDDEN_STATES="$2"; shift 2 ;;
     --return_prefill) RETURN_PREFILL="$2"; shift 2 ;;
     --return_decode) RETURN_DECODE="$2"; shift 2 ;;
@@ -317,12 +321,18 @@ fi
 if [ -n "$AUX_FIX" ]; then
   HYDRA_OVERRIDES+=("reward_manager.aux_fix=$AUX_FIX")
 fi
+if [ -n "$HYPOTHESIS_TYPE" ]; then
+  HYDRA_OVERRIDES+=("reward_manager.hypothesis_type=$HYPOTHESIS_TYPE")
+fi
 # calculator
 if [ -n "$COMPUTE_LOG_EFFECTIVE_RANK" ]; then
   HYDRA_OVERRIDES+=("calculator.compute_log_effective_rank=$COMPUTE_LOG_EFFECTIVE_RANK")
 fi
 if [ -n "$METRIC_INDICES" ]; then
   HYDRA_OVERRIDES+=("calculator.metric_indices=$METRIC_INDICES")
+fi
+if [ -n "$METRIC_INDICES_ADD" ]; then
+  HYDRA_OVERRIDES+=("trainer.metric_indices_add=$METRIC_INDICES_ADD")
 fi
 if [ -n "$SVD_RANK" ]; then
   HYDRA_OVERRIDES+=("calculator.svd_rank=$SVD_RANK")

@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import time
 
 def compute_single_entropy(hidden: torch.Tensor, alpha: float = 1.0001, matrix_type: str = 'gram') -> float:
     """Calculate the entropy of a single sample"""
@@ -129,6 +130,10 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
 
     per_stride_diffs_i = {f"{name} diff": [] for name in selected_metric_names}
     per_stride_diffs_i.update({f"{name} diff 2": [] for name in selected_metric_names})
+    per_stride_diffs_i.update({f"{name} diff_timing": 0.0 for name in selected_metric_names})
+    per_stride_diffs_i.update({f"{name} diff 2_timing": 0.0 for name in selected_metric_names})
+    per_stride_diffs_i.update({f"{name} diff_timing": 0.0 for name in selected_metric_names})
+    per_stride_diffs_i.update({f"{name} diff 2_timing": 0.0 for name in selected_metric_names})
     
     if valid_len < 2 * stride:
         return per_stride_diffs_i
@@ -176,11 +181,15 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
             hist_avg = [sm / history_count for sm in history_sum]
             curr_diff = [(curr - avg) for curr, avg in zip(current_metrics, hist_avg)]
             for idx, name in enumerate(selected_metric_names): 
+                start_t = time.perf_counter()
                 per_stride_diffs_i[f"{name} diff"].append(curr_diff[idx])
+                per_stride_diffs_i[f"{name} diff_timing"] += time.perf_counter() - start_t
             if prev_diff is not None:
                 curr_diff2 = [(cd - pd) for cd, pd in zip(curr_diff, prev_diff)]
                 for idx, name in enumerate(selected_metric_names): 
+                    start_t = time.perf_counter()
                     per_stride_diffs_i[f"{name} diff 2"].append(curr_diff2[idx])
+                    per_stride_diffs_i[f"{name} diff 2_timing"] += time.perf_counter() - start_t
             prev_diff = curr_diff
             
         history_sum = [sm + curr for sm, curr in zip(history_sum, current_metrics)]
@@ -218,11 +227,15 @@ def calculate_diffs_for_single_sample_original(valid_hidden, max_seq_len, stride
             hist_avg = [s / history_count for s in history_sum]
             curr_diff = [(curr - avg) for curr, avg in zip(current_metrics, hist_avg)]
             for idx, name in enumerate(selected_metric_names): 
+                start_t = time.perf_counter()
                 per_stride_diffs_i[f"{name} diff"].append(curr_diff[idx])
+                per_stride_diffs_i[f"{name} diff_timing"] += time.perf_counter() - start_t
             if prev_diff is not None:
                 curr_diff2 = [(cd - pd) for cd, pd in zip(curr_diff, prev_diff)]
                 for idx, name in enumerate(selected_metric_names): 
+                    start_t = time.perf_counter()
                     per_stride_diffs_i[f"{name} diff 2"].append(curr_diff2[idx])
+                    per_stride_diffs_i[f"{name} diff 2_timing"] += time.perf_counter() - start_t
             prev_diff = curr_diff
         history_sum = [s + curr for s, curr in zip(history_sum, current_metrics)]
         history_count += 1
