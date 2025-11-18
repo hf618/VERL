@@ -292,6 +292,9 @@ class LlamaModel(nn.Module):
             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         else:
             self.norm = PPMissingLayer()
+        # 如果需要，可以通过设置 capture_layer_idx 指定要保存的层（默认保存最后一层）
+        # self.capture_layer_idx = getattr(config, "capture_layer_idx", None)
+        self.capture_layer_idx = 15
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -328,6 +331,12 @@ class LlamaModel(nn.Module):
                 attn_metadata,
                 residual,
             )
+            if (get_pp_group().is_last_rank
+                    and self.capture_layer_idx is not None
+                    and i == self.capture_layer_idx):
+                norm_snapshot, _ = self.norm(hidden_states, residual)
+                self.all_hidden_states.append(
+                    norm_snapshot.detach().clone().to(torch.bfloat16))
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -336,7 +345,11 @@ class LlamaModel(nn.Module):
             })
         
         hidden_states, _ = self.norm(hidden_states, residual)
-        self.all_hidden_states.append(hidden_states.detach().clone().to( torch.bfloat16))  # 保存最终 norm 输出
+        # self.all_hidden_states.append(hidden_states.detach().clone().to( torch.bfloat16))  # 保存最终 norm 输出
+        if (self.capture_layer_idx is None
+                or self.capture_layer_idx == self.end_layer - 1):
+            self.all_hidden_states.append(
+                hidden_states.detach().clone().to(torch.bfloat16))
         return hidden_states
 
 

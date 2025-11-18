@@ -18,6 +18,7 @@ METRIC_ORDERS=${13:-"0,1,2"}
 NUM_TEST_SAMPLE=${14:--1}  # 默认值为 -1，表示使用所有样本
 DTYPE=${15:-"torch.bfloat16"}
 GPU_MEMORY_UTILIZATION=${16:-1.0}
+EVAL_SEED_VALUE=${EVAL_MATH_SEED:-0}
 # English open datasets
 DATA_NAME=${benchmarks}
 
@@ -59,7 +60,7 @@ if [ ${#REGULAR_BENCHMARKS[@]} -gt 0 ]; then
         --prompt_type ${PROMPT_TYPE} \
         --num_test_sample -1 \
         --max_tokens_per_call ${max_tokens} \
-        --seed 0 \
+        --seed ${EVAL_SEED_VALUE} \
         --temperature ${temperature} \
         --n_sampling ${N_SAMPLING} \
         --top_p ${top_p} \
@@ -89,7 +90,7 @@ if [ ${#SPECIAL_BENCHMARKS[@]} -gt 0 ]; then
         --prompt_type ${PROMPT_TYPE} \
         --num_test_sample -1 \
         --max_tokens_per_call ${max_tokens} \
-        --seed 0 \
+        --seed ${EVAL_SEED_VALUE} \
         --temperature ${temperature} \
         --n_sampling ${N_SAMPLING} \
         --top_p ${top_p} \

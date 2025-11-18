@@ -18,6 +18,7 @@ GPU_MEMORY_UTILIZATION=0.75
 ACTIVE_CONFIG_SETS=("FULL_PASS1", "SMALL_SAMPLES_PASS16", "LITTLE_SAMPLES_PASS32", "TINY_SAMPLES_PASS256")
 TEMPERATURES=(0.6)
 EVAL_SEED="0"
+VISIBLE_GPUS="1"
 
 # ==============================================================================
 #                2. DEFINE ALL YOUR CONFIGURATION DATA SETS
@@ -69,8 +70,7 @@ RUN_COLLECT_RESULTS="false"
 # =======================================================
 # --- Step 1: Define short "aliases" and control execution order with a regular array ---
 RUN_ALIASES=(
-    "GRPO_VERL"
-    "GRPO_ORIGIN"
+    "1"
 )
 
 # --- Step 2: Use "aliases" as Keys to Define Configuration Dictionaries ---
@@ -78,41 +78,34 @@ RUN_ALIASES=(
 # Alias -> Full Run Name
 declare -A RUN_NAME_MAP
 RUN_NAME_MAP=(
-    ["GRPO_VERL"]="mistralai/Mistral-7B-v0.3_GRPOeradv_verl_max_prompt512_max_response1536_gae_batch48_ppomini24_valbatch48_rollout1_logprobbatch12_klcoef0.001_entcoef0.001_epochs2_simplelr_abel_gsm8k_level1_stride40_mgain2.0_auxgw1.0_ema0.3_critic-DeepSeek-R1-Distill-Qwen-1.5B"
-    ["GRPO_ORIGIN"]="mistralai/Mathstral-7B-v0.1_GRPOorigin_verl_max_prompt512_max_response1536_grpo_batch48_ppomini24_valbatch48_rollout4_logprobbatch6_klcoef0.001_entcoef0.001_epochs2_simplelr_abel_level3to5_stride40_mgain2.0_auxgw1.0_ema0.3"
-
+    ["1"]="llama/Llama-3.2-3B-Instruct_GRPO_old_regu_fixtwo_verl_max_prompt512_max_response1280_grpo_batch48_ppomini24_valbatch48_rollout4_logprobbatch12_klcoef0.001_entcoef0.001_epochs2_simplelr_abel_level1to4_stride40_mgain2.0_auxgw1.0_ema0.3"
 )
 
 # Alias -> Base Model
 
 declare -A BASE_MODEL_MAP
 BASE_MODEL_MAP=(
-    ["GRPO_ORIGIN"]="Mistral-7B-v0.3"
-    ["GRPO_VERL"]="Mistral-7B-v0.3"
+    ["1"]="Llama-3.2-3B-Instruct"
 )
 
 # Alias -> Specific Evaluation Steps
 
 declare -A STEP_MAP
 STEP_MAP=(
-    ["GRPO_ORIGIN"]="120,160"
-    ["GRPO_VERL"]="120,160"
+    ["1"]="120,160"
 )
 
 # Alias -> Specific Template
 
 declare -A TEMPLATE_MAP
 TEMPLATE_MAP=(
-    ["GRPO_ORIGIN"]="abel"
-    ["GRPO_VERL"]="abel"
-
+    ["1"]="abel"
 )
 
 # Alias -> Maximum Response Length
 declare -A MAX_RESPONSE_LENGTH_MAP
 MAX_RESPONSE_LENGTH_MAP=(
-    ["GRPO_ORIGIN"]=1536
-    ["GRPO_VERL"]=1536
+    ["1"]=1280
 )
 
 for CONFIG_NAME in "${ACTIVE_CONFIG_SETS[@]}"; do
@@ -176,7 +169,7 @@ for CONFIG_NAME in "${ACTIVE_CONFIG_SETS[@]}"; do
                 --max_tokens ${max_response_length} \
                 --benchmarks "${BENCHMARKS}" \
                 --n_sampling ${current_n_sampling} \
-                --visible_gpus 0 \
+                --visible_gpus "${VISIBLE_GPUS}" \
                 --output_dir "${FINAL_OUTPUT_DIR}" \
                 --use_wandb_arg ${USE_WANDB} \
                 --calculate_metrics ${CALCULATE_METRICS} \
@@ -189,7 +182,7 @@ for CONFIG_NAME in "${ACTIVE_CONFIG_SETS[@]}"; do
                 --checkpoint_subdir "${HDFS_CHECKPOINT_SUBDIR}" \
                 --init_model_base_path "${MODEL_BASE_PATH}" \
                 --dtype "${DTYPE}" \
-            --run_collect_results "${RUN_COLLECT_RESULTS}" \
+                --run_collect_results "${RUN_COLLECT_RESULTS}" \
                 --eval_seed "${EVAL_SEED}" \
                 --gpu_memory_utilization ${GPU_MEMORY_UTILIZATION}
         done

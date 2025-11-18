@@ -43,6 +43,7 @@ num_test_sample_per_dataset=-1  # 默认值
 dtype=" torch.bfloat16"
 run_collect_results="true"
 gpu_memory_utilization=1.0
+eval_seed=""
 
 
 while [[ $# -gt 0 ]]; do
@@ -155,6 +156,14 @@ while [[ $# -gt 0 ]]; do
             gpu_memory_utilization="$2"
             shift 2
             ;;
+        --eval_seed)
+            eval_seed="$2"
+            shift 2
+            ;;
+        --checkpoint_subdir)
+            CHECKPOINT_SUBDIR="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown parameter: $1"
             exit 1
@@ -172,7 +181,8 @@ fi
 
 
 eval_script_path="sh/eval.sh"
-base_checkpoint_path="${HDFS_HOME}/checkpoint/${RUN_NAME}"
+checkpoint_subdir="${CHECKPOINT_SUBDIR:-checkpoint}"
+base_checkpoint_path="${HDFS_HOME}/${checkpoint_subdir}/${RUN_NAME}"
 init_model_path="${INIT_MODEL_BASE_PATH}/${INIT_MODEL_PATH}"
 chmod +x sh/convert_and_evaluate_gpu_nodes.sh
 
@@ -264,7 +274,7 @@ printf '%s\n' "${node_checkpoints[@]}" > "$tmp_ckpt_file"
 
 if [ "$just_wandb" != "true" ]; then
     # # 调用转化和评估脚本
-    bash sh/convert_and_evaluate_gpu_nodes.sh \
+    EVAL_MATH_SEED="$eval_seed" bash sh/convert_and_evaluate_gpu_nodes.sh \
     "$eval_script_path" \
     "$base_checkpoint_path" \
     "$init_model_path" \
@@ -288,8 +298,8 @@ if [ "$just_wandb" != "true" ]; then
     "$gpu_memory_utilization"
 fi
 
-WANDB_FLAG="" # <--- (新增) 创建一个空变量
-if [ "$use_wandb_arg" = "true" ]; then # <--- (新增) 判断条件
+WANDB_FLAG="" 
+if [ "$use_wandb_arg" = "true" ]; then
     WANDB_FLAG="--use_wandb"
 fi
 
