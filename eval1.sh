@@ -7,7 +7,7 @@ DTYPE="torch.bfloat16"
 HDFS_PATH="/home/fdhuang/storage_net/simpleRL/custom"
 HDFS_CHECKPOINT_SUBDIR="checkpoint_rebuttal"
 MODEL_BASE_PATH="/home/fdhuang/storage_net/Models"
-GPU_MEMORY_UTILIZATION=0.75
+GPU_MEMORY_UTILIZATION=0.99
  
 # ==============================================================================
 #                      1. CHOOSE YOUR CONFIGURATION HERE
@@ -15,7 +15,7 @@ GPU_MEMORY_UTILIZATION=0.75
 # Just change the value of this variable to switch between test sets.
 # Available options: "FULL_PASS1", "SMALL_SAMPLES_PASS16", "LITTLE_SAMPLES_PASS32", "TINY_SAMPLES_PASS256"
 
-ACTIVE_CONFIG_SETS=("FULL_PASS1", "SMALL_SAMPLES_PASS16", "LITTLE_SAMPLES_PASS32", "TINY_SAMPLES_PASS256")
+ACTIVE_CONFIG_SETS=("FULL_SAMPLES_PASS1" "SMALL_SAMPLES_PASS16" "LITTLE_SAMPLES_PASS32" "TINY_SAMPLES_PASS256")
 TEMPERATURES=(0.6)
 EVAL_SEED="0"
 VISIBLE_GPUS="2"

@@ -294,7 +294,7 @@ class LlamaModel(nn.Module):
             self.norm = PPMissingLayer()
         # 如果需要，可以通过设置 capture_layer_idx 指定要保存的层（默认保存最后一层）
         # self.capture_layer_idx = getattr(config, "capture_layer_idx", None)
-        self.capture_layer_idx = 15
+        self.capture_layer_idx = 14 # 从 0 开始
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -334,9 +334,9 @@ class LlamaModel(nn.Module):
             if (get_pp_group().is_last_rank
                     and self.capture_layer_idx is not None
                     and i == self.capture_layer_idx):
-                norm_snapshot, _ = self.norm(hidden_states, residual)
+                # norm_snapshot, _ = self.norm(hidden_states, residual)
                 self.all_hidden_states.append(
-                    norm_snapshot.detach().clone().to(torch.bfloat16))
+                    hidden_states.detach().clone().to(torch.bfloat16))
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({

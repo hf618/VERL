@@ -29,21 +29,35 @@ def compute_single_entropy(hidden: torch.Tensor, alpha: float = 1.0001, matrix_t
             return (1/(1-alpha)) * torch.log(torch.sum(normalized**alpha)).item()
     except torch._C._LinAlgError:
         return 0.0
-
+    
 def compute_single_effective_rank(hidden: torch.Tensor, svd_rank: int, svd_niter: int, log_output: bool = False, method: str = 'lowrank') -> tuple[float, float]:
-    """Calculate the effective rank and traditional rank of a single sample."""
-    assert method in ['lowrank', 'full'], "SVD method must be 'lowrank' or 'full'"
-    if hidden.size(0) < 2: return 0.0, 0
+    """
+    Calculates Effective Rank using Eigvalsh on the smallest possible Gram matrix.
+    - If L < D: computes eig(X @ X.T) -> O(L^3)
+    - If L > D: computes eig(X.T @ X) -> O(D^3)
+    """
+    if hidden.size(0) < 2: return 0.0, 0.0
     try:
-        
         hidden_f32 = hidden.to(torch.float32)
         centered = hidden_f32 - hidden_f32.mean(dim=0, keepdim=True)
 
-        S = None
-        if method == 'lowrank':
-            _, S, _ = torch.svd_lowrank(centered, q=min(svd_rank, min(centered.shape)), niter=svd_niter)
-        else: # 'full'
-            S = torch.linalg.svdvals(centered)
+        # --- Adaptive Optimization ---
+        L, D = centered.shape
+        
+        if L < D:
+            # Case 1: 序列短，维度大 (L < D) -> 用原始优化 (L x L)
+            G = centered @ centered.T
+        else:
+            # Case 2: 序列长，维度小 (L > D) -> 用转置优化 (D x D)
+            G = centered.T @ centered
+            
+        # Eigenvalue decomposition on symmetric matrix
+        # 无论 G 是 (L,L) 还是 (D,D)，它们的非零特征值是相同的
+        eigvals = torch.linalg.eigvalsh(G)
+        
+        # Convert eigenvalues to singular values: sigma = sqrt(max(0, lambda))
+        S = torch.sqrt(torch.relu(eigvals))
+        # -----------------------------
             
         traditional_rank = 0
         if S is not None and S.numel() > 0:
@@ -119,11 +133,13 @@ def _get_metrics_from_eigenvalues(eigenvalues, selected_metric_names):
 def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, stride, selected_metric_names, 
                                                 svd_rank, svd_niter, svd_method):
     """
-    [Final Production Version]
-    An efficient, accurate, and logically correct optimization function. 
-    This version ensures numerical stability and correctness through incremental accumulation with high precision.
+    - Algorithm: Auto-selects 'L-Mode' (L < D) or 'D-Mode' (L >= D).
+    - Logic: Unified 'processed_idx' ensures strictly equivalent data processing.
+    - Timing: 'Winner Takes All' (First shared metric pays for SVD).
     """
     valid_len = valid_hidden.size(0)
+    hidden_dim = valid_hidden.size(1)
+    
     if valid_len > max_seq_len:
         valid_hidden = valid_hidden[-max_seq_len:]
         valid_len = max_seq_len
@@ -131,71 +147,126 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
     per_stride_diffs_i = {f"{name} diff": [] for name in selected_metric_names}
     per_stride_diffs_i.update({f"{name} diff 2": [] for name in selected_metric_names})
     per_stride_diffs_i.update({f"{name} diff_timing": 0.0 for name in selected_metric_names})
-    per_stride_diffs_i.update({f"{name} diff 2_timing": 0.0 for name in selected_metric_names})
-    per_stride_diffs_i.update({f"{name} diff_timing": 0.0 for name in selected_metric_names})
-    per_stride_diffs_i.update({f"{name} diff 2_timing": 0.0 for name in selected_metric_names})
     
     if valid_len < 2 * stride:
         return per_stride_diffs_i
+
+    # Identify shared metrics
+    shared_metrics = [n for n in selected_metric_names if n != "Curvature"]
+    primary_payer_metric = shared_metrics[0] if len(shared_metrics) > 0 else None
+    has_curvature = "Curvature" in selected_metric_names
 
     history_sum = [0.0] * len(selected_metric_names)
     history_count = 0
     prev_diff = None
 
-    s = torch.zeros(1, valid_hidden.shape[1], device=valid_hidden.device, dtype=torch.float32)
-    U = None
-    H_old = None
+    # --- Decision: L-Mode vs D-Mode ---
+    use_d_mode = valid_len >= hidden_dim
+
+    # Variables for state tracking
+    s = torch.zeros(1, hidden_dim, device=valid_hidden.device, dtype=torch.float32)
+    processed_idx = 0 # Tracks how many tokens have been integrated into U or G_raw
+    
+    U = None      # L-Mode state
+    G_raw = None  # D-Mode state
 
     for t in range(stride, valid_len, stride):
         current_window = valid_hidden[:t+1]
+        
+        # =========================================================
+        # A. Shared Computation (Adaptive)
+        # =========================================================
+        t0_shared = time.perf_counter()
         current_window_f32 = current_window.to(torch.float32)
         
-        new_chunk = current_window_f32[len(H_old) if H_old is not None else 0:]
-
+        # 1. Unified slicing logic: Get the new data chunk
+        new_chunk = current_window_f32[processed_idx:]
+        
+        # 2. Unified Sum update
         s = s + new_chunk.sum(dim=0, keepdim=True)
         
-        if U is None: 
-            U = new_chunk @ new_chunk.T
-        else:
-            C12 = H_old @ new_chunk.T
-            C22 = new_chunk @ new_chunk.T
-            top_part = torch.cat([U, C12], dim=1)
-            bottom_part = torch.cat([C12.T, C22], dim=1)
-            U = torch.cat([top_part, bottom_part], dim=0)
-
         k = current_window_f32.shape[0]
-        mean_vec = s / k
-        mean_gram = mean_vec @ mean_vec.T
-        hs_T = current_window_f32 @ s.T / k
+
+        if not use_d_mode:
+            # === L-Mode (Optimized for L < D) ===
+            # H_old is simply the window *before* the new chunk
+            if processed_idx > 0:
+                H_old = current_window_f32[:processed_idx]
+                # Block Matrix Multiplication update for U
+                C12 = H_old @ new_chunk.T
+                C22 = new_chunk @ new_chunk.T
+                top_part = torch.cat([U, C12], dim=1)
+                bottom_part = torch.cat([C12.T, C22], dim=1)
+                U = torch.cat([top_part, bottom_part], dim=0)
+            else:
+                # First iteration
+                U = new_chunk @ new_chunk.T
+            
+            # Centering formula for L x L
+            mean_vec = s / k
+            mean_gram = mean_vec @ mean_vec.T
+            hs_T = current_window_f32 @ s.T / k
+            ones_k = torch.ones((k, 1), device=current_window_f32.device, dtype=torch.float32)
+            
+            G = U - hs_T @ ones_k.T - ones_k @ hs_T.T + mean_gram
+            
+        else:
+            # === D-Mode (Optimized for L >= D) ===
+            # Update G_raw (D x D)
+            term = new_chunk.T @ new_chunk
+            if G_raw is None:
+                G_raw = term
+            else:
+                G_raw = G_raw + term
+
+            # Centering formula for D x D: X.T@X - (sum.T@sum)/N
+            G = G_raw - (s.T @ s) / k
         
-        ones_k = torch.ones((k, 1), device=current_window_f32.device, dtype=torch.float32)
-        G = U - hs_T @ ones_k.T - ones_k @ hs_T.T + mean_gram
-        
+        # Advance the index
+        processed_idx += new_chunk.shape[0]
+
+        # Common Eigen Decomposition
         eigenvalues = torch.linalg.eigvalsh(G)
         current_metrics = _get_metrics_from_eigenvalues(eigenvalues, selected_metric_names)
+        
+        t1_shared = time.perf_counter()
+        shared_cost = t1_shared - t0_shared 
 
-        if "Curvature" in selected_metric_names:
+        # =========================================================
+        # B. Independent Computation (Curvature)
+        # =========================================================
+        curvature_cost = 0.0
+        if has_curvature:
+            t0_curv = time.perf_counter()
             current_metrics[selected_metric_names.index("Curvature")] = compute_single_curvature(current_window)
+            curvature_cost = time.perf_counter() - t0_curv
 
+        # =========================================================
+        # C. Diff Storage & Time Attribution
+        # =========================================================
         if history_count > 0:
             hist_avg = [sm / history_count for sm in history_sum]
             curr_diff = [(curr - avg) for curr, avg in zip(current_metrics, hist_avg)]
+            
             for idx, name in enumerate(selected_metric_names): 
-                start_t = time.perf_counter()
                 per_stride_diffs_i[f"{name} diff"].append(curr_diff[idx])
-                per_stride_diffs_i[f"{name} diff_timing"] += time.perf_counter() - start_t
+                
+                if name == "Curvature":
+                    per_stride_diffs_i[f"{name} diff_timing"] += curvature_cost
+                elif name == primary_payer_metric:
+                    per_stride_diffs_i[f"{name} diff_timing"] += shared_cost
+                else:
+                    pass 
+
             if prev_diff is not None:
                 curr_diff2 = [(cd - pd) for cd, pd in zip(curr_diff, prev_diff)]
                 for idx, name in enumerate(selected_metric_names): 
-                    start_t = time.perf_counter()
                     per_stride_diffs_i[f"{name} diff 2"].append(curr_diff2[idx])
-                    per_stride_diffs_i[f"{name} diff 2_timing"] += time.perf_counter() - start_t
+                    
             prev_diff = curr_diff
             
         history_sum = [sm + curr for sm, curr in zip(history_sum, current_metrics)]
         history_count += 1
-        
-        H_old = current_window_f32
             
     return per_stride_diffs_i
 
@@ -227,15 +298,11 @@ def calculate_diffs_for_single_sample_original(valid_hidden, max_seq_len, stride
             hist_avg = [s / history_count for s in history_sum]
             curr_diff = [(curr - avg) for curr, avg in zip(current_metrics, hist_avg)]
             for idx, name in enumerate(selected_metric_names): 
-                start_t = time.perf_counter()
                 per_stride_diffs_i[f"{name} diff"].append(curr_diff[idx])
-                per_stride_diffs_i[f"{name} diff_timing"] += time.perf_counter() - start_t
             if prev_diff is not None:
                 curr_diff2 = [(cd - pd) for cd, pd in zip(curr_diff, prev_diff)]
                 for idx, name in enumerate(selected_metric_names): 
-                    start_t = time.perf_counter()
                     per_stride_diffs_i[f"{name} diff 2"].append(curr_diff2[idx])
-                    per_stride_diffs_i[f"{name} diff 2_timing"] += time.perf_counter() - start_t
             prev_diff = curr_diff
         history_sum = [s + curr for s, curr in zip(history_sum, current_metrics)]
         history_count += 1

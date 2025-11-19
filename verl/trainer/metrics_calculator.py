@@ -164,7 +164,7 @@ class RepresentationMetricsCalculator():
                 layer_global_metrics = {}
                 for name, func in self.selected_metrics:
  
-                    metric_value = func(aggregated_matrix.unsqueeze(0), None) #unsqueeze(0) to make it (1, num_samples, hidden_dim)
+                    metric_value = func(aggregated_matrix.unsqueeze(0), None) # unsqueeze(0) to make it (1, num_samples, hidden_dim)
                     layer_global_metrics[f"global/{name}"] = metric_value.item()
 
                 global_results[layer_key] = layer_global_metrics

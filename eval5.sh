@@ -5,7 +5,7 @@
 # =======================================================
 DTYPE="torch.bfloat16"
 HDFS_PATH="/home/fdhuang/storage_net/simpleRL/custom"
-HDFS_CHECKPOINT_SUBDIR="checkpoint_rebuttal"
+HDFS_CHECKPOINT_SUBDIR="checkpoint"
 MODEL_BASE_PATH="/home/fdhuang/storage_net/Models"
 GPU_MEMORY_UTILIZATION=0.99
  
@@ -17,8 +17,8 @@ GPU_MEMORY_UTILIZATION=0.99
 
 ACTIVE_CONFIG_SETS=("FULL_SAMPLES_PASS1" "SMALL_SAMPLES_PASS16" "LITTLE_SAMPLES_PASS32" "TINY_SAMPLES_PASS256")
 TEMPERATURES=(0.6)
-EVAL_SEED="0"
-VISIBLE_GPUS="3"
+EVAL_SEED="1"
+VISIBLE_GPUS="4"
 
 # ==============================================================================
 #                2. DEFINE ALL YOUR CONFIGURATION DATA SETS
@@ -78,7 +78,7 @@ RUN_ALIASES=(
 # Alias -> Full Run Name
 declare -A RUN_NAME_MAP
 RUN_NAME_MAP=(
-    ["1"]="llama/Llama-3.2-3B-Instruct_GRPO_old_regu_exploit_verl_max_prompt512_max_response1280_grpo_batch48_ppomini24_valbatch48_rollout4_logprobbatch12_klcoef0.001_entcoef0.001_epochs2_simplelr_abel_level1to4_stride40_mgain2.0_auxgw1.0_ema0.3"
+    ["1"]="llama/Llama-3.2-3B-Instruct_GRPOorigin2_verl_max_prompt512_max_response1280_grpo_batch48_ppomini24_valbatch48_rollout4_logprobbatch16_klcoef0.001_entcoef0.001_epochs2_simplelr_abel_level1to4_stride40_mgain2.0_auxgw1.0_ema0.3"
 )
 
 # Alias -> Base Model
@@ -92,7 +92,7 @@ BASE_MODEL_MAP=(
 
 declare -A STEP_MAP
 STEP_MAP=(
-    ["1"]="120,160"
+    ["1"]="0,120,160"
 )
 
 # Alias -> Specific Template
