@@ -226,7 +226,6 @@ class RepresentationMetricsCalculator():
     def _free_tensors(self, tensors):
         """
         Explicitly frees a list of PyTorch tensors from memory.
-
         Args:
             tensors (list): A list of torch.Tensor objects to be deleted.
         """

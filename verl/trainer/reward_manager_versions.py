@@ -50,7 +50,8 @@ class RewardManager():
                  aux_reward_global_weight=1.0,
                  adv_estimator='grpo',
                  aux_fix=False,
-                 hypothesis_type: str = "PlanB"):
+                 hypothesis_type: str = "PlanB",
+                 guidance_metric="Effective Rank diff 2"):
         self.tokenizer = tokenizer
         self.num_examine = num_examine
         self.compute_score = compute_score or _default_compute_score
@@ -76,6 +77,7 @@ class RewardManager():
         self.aux_fix = aux_fix
         self.adv_estimator = adv_estimator
         self.hypothesis_type = hypothesis_type
+        self.guidance_metric = guidance_metric
     
         
 
@@ -165,7 +167,8 @@ class RewardManager():
 
             if use_aux_reward:
                 # Calculate the 'Percentage Deviation' as the guidance signal
-                guidance_indicator_name = self.indicator_names[0] # Diff 2
+                # guidance_indicator_name = self.indicator_names[0] # 默认取 effective rank Diff 2
+                guidance_indicator_name = self.guidance_metric # 默认取 effective rank Diff 2
                 current_guidance_value = data_item.batch['calculator_results'][layer_key][guidance_indicator_name]
                 ema_baseline = self.mids[guidance_indicator_name]
                 

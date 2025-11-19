@@ -3,21 +3,37 @@ import torch.nn.functional as F
 import time
 
 def compute_single_entropy(hidden: torch.Tensor, alpha: float = 1.0001, matrix_type: str = 'gram') -> float:
-    """Calculate the entropy of a single sample"""
-    assert matrix_type in ['covariance', 'gram'], "matrix_type must be 'covariance' or 'gram'"
+    """
+    Automatically chooses the smallest matrix (L x L or D x D) to compute spectral entropy.
+    Mathematically equivalent to the original version regardless of matrix_type.
+    """
+    # matrix_type argument is kept for API compatibility but ignored for logic optimization
     if hidden.size(0) < 2: return 0.0
     try:
-        
         hidden_f32 = hidden.to(torch.float32)
         centered = hidden_f32 - hidden_f32.mean(dim=0, keepdim=True)
         
-        matrix = None
-        if matrix_type == 'covariance':
-            matrix = centered.T @ centered / (centered.size(0) - 1)
-        else: # 'gram'
-            matrix = centered @ centered.T
+        L, D = centered.shape
         
-        eigvals = torch.linalg.eigvalsh(matrix) 
+        # --- Adaptive Optimization ---
+        # Always compute the smaller matrix to save time/memory
+        if L < D:
+            # Short sequence: L x L
+            G = centered @ centered.T
+        else:
+            # Long sequence: D x D
+            G = centered.T @ centered
+        
+        # Note: We do NOT need to divide by (L-1) even for 'covariance' intent,
+        # because entropy is scale-invariant (normalization cancels the scale).
+        
+        eigvals = torch.linalg.eigvalsh(G) 
+        
+        # Safety Truncation: remove theoretical noise zeros
+        k = min(L, D)
+        eigvals = eigvals[-k:]
+        
+        # Filter numerical zeros
         eigvals = eigvals[eigvals > 1e-8]
         if len(eigvals) == 0: return 0.0
         
@@ -32,32 +48,29 @@ def compute_single_entropy(hidden: torch.Tensor, alpha: float = 1.0001, matrix_t
     
 def compute_single_effective_rank(hidden: torch.Tensor, svd_rank: int, svd_niter: int, log_output: bool = False, method: str = 'lowrank') -> tuple[float, float]:
     """
-    Calculates Effective Rank using Eigvalsh on the smallest possible Gram matrix.
-    - If L < D: computes eig(X @ X.T) -> O(L^3)
-    - If L > D: computes eig(X.T @ X) -> O(D^3)
+    [Adaptive Optimized Version with Safety Truncation]
     """
     if hidden.size(0) < 2: return 0.0, 0.0
     try:
         hidden_f32 = hidden.to(torch.float32)
         centered = hidden_f32 - hidden_f32.mean(dim=0, keepdim=True)
 
-        # --- Adaptive Optimization ---
         L, D = centered.shape
-        
+        # Adaptive Choice
         if L < D:
-            # Case 1: 序列短，维度大 (L < D) -> 用原始优化 (L x L)
             G = centered @ centered.T
         else:
-            # Case 2: 序列长，维度小 (L > D) -> 用转置优化 (D x D)
             G = centered.T @ centered
-            
-        # Eigenvalue decomposition on symmetric matrix
-        # 无论 G 是 (L,L) 还是 (D,D)，它们的非零特征值是相同的
+        
         eigvals = torch.linalg.eigvalsh(G)
         
-        # Convert eigenvalues to singular values: sigma = sqrt(max(0, lambda))
+        # --- Safety Truncation ---
+        # Ensure we strictly use at most min(L, D) eigenvalues to match SVD behavior perfectly
+        # Even if Adaptive algo already produces correct size, this is a zero-cost safety net.
+        k = min(L, D)
+        eigvals = eigvals[-k:] 
+        
         S = torch.sqrt(torch.relu(eigvals))
-        # -----------------------------
             
         traditional_rank = 0
         if S is not None and S.numel() > 0:
@@ -76,6 +89,7 @@ def compute_single_effective_rank(hidden: torch.Tensor, svd_rank: int, svd_niter
         return effective_rank_val, float(traditional_rank)
     except torch._C._LinAlgError:
         return 0.0, 0.0
+    
 
 def compute_single_curvature(hidden: torch.Tensor) -> float:
     """Calculate the curvature of a single sample"""
@@ -133,9 +147,7 @@ def _get_metrics_from_eigenvalues(eigenvalues, selected_metric_names):
 def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, stride, selected_metric_names, 
                                                 svd_rank, svd_niter, svd_method):
     """
-    - Algorithm: Auto-selects 'L-Mode' (L < D) or 'D-Mode' (L >= D).
-    - Logic: Unified 'processed_idx' ensures strictly equivalent data processing.
-    - Timing: 'Winner Takes All' (First shared metric pays for SVD).
+    [Final Adaptive Production Version]
     """
     valid_len = valid_hidden.size(0)
     hidden_dim = valid_hidden.size(1)
@@ -151,7 +163,6 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
     if valid_len < 2 * stride:
         return per_stride_diffs_i
 
-    # Identify shared metrics
     shared_metrics = [n for n in selected_metric_names if n != "Curvature"]
     primary_payer_metric = shared_metrics[0] if len(shared_metrics) > 0 else None
     has_curvature = "Curvature" in selected_metric_names
@@ -160,90 +171,74 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
     history_count = 0
     prev_diff = None
 
-    # --- Decision: L-Mode vs D-Mode ---
     use_d_mode = valid_len >= hidden_dim
 
-    # Variables for state tracking
     s = torch.zeros(1, hidden_dim, device=valid_hidden.device, dtype=torch.float32)
-    processed_idx = 0 # Tracks how many tokens have been integrated into U or G_raw
-    
-    U = None      # L-Mode state
-    G_raw = None  # D-Mode state
+    processed_idx = 0
+    U = None      
+    G_raw = None  
 
     for t in range(stride, valid_len, stride):
         current_window = valid_hidden[:t+1]
         
-        # =========================================================
-        # A. Shared Computation (Adaptive)
-        # =========================================================
+        # A. Shared Computation
         t0_shared = time.perf_counter()
         current_window_f32 = current_window.to(torch.float32)
         
-        # 1. Unified slicing logic: Get the new data chunk
         new_chunk = current_window_f32[processed_idx:]
-        
-        # 2. Unified Sum update
         s = s + new_chunk.sum(dim=0, keepdim=True)
-        
         k = current_window_f32.shape[0]
 
         if not use_d_mode:
-            # === L-Mode (Optimized for L < D) ===
-            # H_old is simply the window *before* the new chunk
+            # L-Mode
             if processed_idx > 0:
                 H_old = current_window_f32[:processed_idx]
-                # Block Matrix Multiplication update for U
                 C12 = H_old @ new_chunk.T
                 C22 = new_chunk @ new_chunk.T
                 top_part = torch.cat([U, C12], dim=1)
                 bottom_part = torch.cat([C12.T, C22], dim=1)
                 U = torch.cat([top_part, bottom_part], dim=0)
             else:
-                # First iteration
                 U = new_chunk @ new_chunk.T
             
-            # Centering formula for L x L
             mean_vec = s / k
             mean_gram = mean_vec @ mean_vec.T
             hs_T = current_window_f32 @ s.T / k
             ones_k = torch.ones((k, 1), device=current_window_f32.device, dtype=torch.float32)
-            
             G = U - hs_T @ ones_k.T - ones_k @ hs_T.T + mean_gram
             
         else:
-            # === D-Mode (Optimized for L >= D) ===
-            # Update G_raw (D x D)
+            # D-Mode
             term = new_chunk.T @ new_chunk
             if G_raw is None:
                 G_raw = term
             else:
                 G_raw = G_raw + term
-
-            # Centering formula for D x D: X.T@X - (sum.T@sum)/N
             G = G_raw - (s.T @ s) / k
         
-        # Advance the index
         processed_idx += new_chunk.shape[0]
 
-        # Common Eigen Decomposition
         eigenvalues = torch.linalg.eigvalsh(G)
+        
+        # --- Safety Truncation ---
+        # Only keep the top min(k, hidden_dim) eigenvalues.
+        # This filters out numerical noise if the matrix dim > rank.
+        valid_rank_limit = min(k, hidden_dim)
+        eigenvalues = eigenvalues[-valid_rank_limit:]
+        
         current_metrics = _get_metrics_from_eigenvalues(eigenvalues, selected_metric_names)
         
         t1_shared = time.perf_counter()
         shared_cost = t1_shared - t0_shared 
 
-        # =========================================================
-        # B. Independent Computation (Curvature)
-        # =========================================================
+        # B. Independent Computation
         curvature_cost = 0.0
         if has_curvature:
             t0_curv = time.perf_counter()
             current_metrics[selected_metric_names.index("Curvature")] = compute_single_curvature(current_window)
             curvature_cost = time.perf_counter() - t0_curv
 
-        # =========================================================
-        # C. Diff Storage & Time Attribution
-        # =========================================================
+        # C. Diff Storage
         if history_count > 0:
             hist_avg = [sm / history_count for sm in history_sum]
             curr_diff = [(curr - avg) for curr, avg in zip(current_metrics, hist_avg)]
@@ -255,8 +250,6 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
                     per_stride_diffs_i[f"{name} diff_timing"] += curvature_cost
                 elif name == primary_payer_metric:
                     per_stride_diffs_i[f"{name} diff_timing"] += shared_cost
-                else:
-                    pass 
 
             if prev_diff is not None:
                 curr_diff2 = [(cd - pd) for cd, pd in zip(curr_diff, prev_diff)]
@@ -270,6 +263,7 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
             
     return per_stride_diffs_i
 
+# We dont use this
 def calculate_diffs_for_single_sample_original(valid_hidden, max_seq_len, stride, selected_metric_names, 
                                       svd_rank, svd_niter, svd_method):
     """Compute the first and second order differences of all selected metrics for the hidden state of a single sample. (Baseline version)"""

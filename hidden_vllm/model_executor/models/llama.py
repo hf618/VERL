@@ -294,7 +294,7 @@ class LlamaModel(nn.Module):
             self.norm = PPMissingLayer()
         # 如果需要，可以通过设置 capture_layer_idx 指定要保存的层（默认保存最后一层）
         # self.capture_layer_idx = getattr(config, "capture_layer_idx", None)
-        self.capture_layer_idx = 14 # 从 0 开始
+        self.capture_layer_idx = None # 从 0 开始
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
