@@ -194,7 +194,7 @@ trainer:
   val_sample_size: -1     
   except_save: ""
   val_only: False
-  metric_indices_add: []
+  metric_indices_add: []  # additional metrics beyond selected effective rank metrics (e.g. 'avg_logits_entropy')
   plot_config:
     mode: disable # 可选: disable, exploit, explore, allin
     x_metrics: ['Effective Rank'] # a list of metrics for x axis
@@ -230,4 +230,4 @@ calculator:
   compute_cumulative_global_metrics: False
   global_diff_stride_train: 1 
   global_diff_stride_val: 20  
-  diff_calculator_method: 'optimized' # optimized or original
+  diff_calculator_method: 'optimized' # optimized or original batched

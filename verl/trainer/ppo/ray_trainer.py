@@ -1123,14 +1123,14 @@ class RayPPOTrainer(object):
 
                     diff_stride_val = self.config.calculator.get('diff_stride', 20)
                     # test_batch.batch['hidden_states_decode'] [10, 2048, 2, 896]
-        
 
-                    test_batch.batch['calculator_results'], _ = self.calculator(
-                        hidden_states=test_batch.batch['hidden_states_decode'],
-                        attention_mask=response_attention_mask,
-                        compute_diff=True,
-                        diff_stride=diff_stride_val
-                    )
+                    if 'calculator_results' not in test_batch.batch:
+                        test_batch.batch['calculator_results'], _ = self.calculator(
+                            hidden_states=test_batch.batch['hidden_states_decode'],
+                            attention_mask=response_attention_mask,
+                            compute_diff=True,
+                            diff_stride=diff_stride_val
+                        )
                     if self.additional_metric_names:
                         val_additional_metrics, _ = self._collect_additional_metrics(test_batch)
                         self._merge_additional_metrics_into_results(test_batch, val_additional_metrics)
@@ -1278,6 +1278,15 @@ class RayPPOTrainer(object):
 
     def init_workers(self):
         """Init resource pool and worker group"""
+        # merge calculator/data into rollout/ref configs so workers can use metrics on-device
+        # clone base config without struct to allow new keys
+        actor_rollout_ref_cfg = OmegaConf.create(
+            OmegaConf.to_container(self.config.actor_rollout_ref, resolve=False)
+        )
+        actor_rollout_ref_cfg.merge_with(
+            OmegaConf.create({"calculator": self.config.calculator, "data": self.config.data})
+        )
+
         self.resource_pool_manager.create_resource_pool()
 
         self.resource_pool_to_cls = {pool: {} for pool in self.resource_pool_manager.resource_pool_dict.values()}
@@ -1286,7 +1295,7 @@ class RayPPOTrainer(object):
         if self.hybrid_engine:
             resource_pool = self.resource_pool_manager.get_resource_pool(Role.ActorRollout)
             actor_rollout_cls = RayClassWithInitArgs(cls=self.role_worker_mapping[Role.ActorRollout],
-                                                     config=self.config.actor_rollout_ref,
+                                                     config=actor_rollout_ref_cfg,
                                                      role='actor_rollout')
             self.resource_pool_to_cls[resource_pool]['actor_rollout'] = actor_rollout_cls
         else:
@@ -1302,7 +1311,7 @@ class RayPPOTrainer(object):
         if self.use_reference_policy:
             resource_pool = self.resource_pool_manager.get_resource_pool(Role.RefPolicy)
             ref_policy_cls = RayClassWithInitArgs(self.role_worker_mapping[Role.RefPolicy],
-                                                  config=self.config.actor_rollout_ref,
+                                                  config=actor_rollout_ref_cfg,
                                                   role='ref')
             self.resource_pool_to_cls[resource_pool]['ref'] = ref_policy_cls
 
@@ -1551,6 +1560,13 @@ class RayPPOTrainer(object):
         target_device = batch.batch['responses'].device
 
         with torch.no_grad():
+            if 'avg_logits_entropy' in metric_names:
+                start_time = time.perf_counter()
+                ent = batch.batch.get('avg_logits_entropy', None)
+                if ent is not None:
+                    additional_metrics['avg_logits_entropy'] = ent.detach()
+                additional_timing['avg_logits_entropy'] = additional_timing.get('avg_logits_entropy', 0.0) + (time.perf_counter() - start_time)
+
             if 'avg_log_probs' in metric_names:
                 start_time = time.perf_counter()
                 log_probs = batch.batch.get('old_log_probs', None)
@@ -1745,22 +1761,30 @@ class RayPPOTrainer(object):
                     mem_before_cal = _capture_gpu_memory_mb()
                     with _timer('cal', timing_raw):
                         if use_calculator and 'hidden_states_decode' in batch.batch:
-                            
-                            # 0. 为了高效，先将需要的数据暂存
-                            
+                            calc_metric_profile = {}
                             prompt_len = batch.batch['prompts'].shape[1]
                             response_attention_mask = batch.batch['attention_mask'][:, prompt_len:]
-                            diff_stride_train = self.config.calculator.get('diff_stride', 20)
+                            if 'calculator_results' in batch.batch:
+                                # 已在 worker 端 GPU 上计算好，直接复用
+                                calc_metric_profile = batch.meta_info.get('calc_metric_profile', {}) if batch.meta_info else {}
+                            else:
+                                # 0. 为了高效，先将需要的数据暂存
+                                diff_stride_train = self.config.calculator.get('diff_stride', 20)
 
-
-                            # 1. 执行原有的“单样本”指标计算，结果存入 batch 供后续处理
-                            batch.batch['calculator_results'], calc_metric_profile = self.calculator(
-                                hidden_states=batch.batch['hidden_states_decode'],
-                                attention_mask=response_attention_mask,
-                                compute_diff=True,
-                                diff_stride=diff_stride_train
-                            )
+                                # 1. 执行原有的“单样本”指标计算，结果存入 batch 供后续处理
+                                batch.batch['calculator_results'], calc_metric_profile = self.calculator(
+                                    hidden_states=batch.batch['hidden_states_decode'],
+                                    attention_mask=response_attention_mask,
+                                    compute_diff=True,
+                                    diff_stride=diff_stride_train
+                                )
                             metric_profile_step.update(calc_metric_profile)
+                            # 将 worker 端或本地 calculator 的耗时记录为 sum/max，便于比对并行和墙钟
+                            
+                            if calc_metric_profile:
+                                worker_times = list(calc_metric_profile.values())
+                                timing_raw['cal_worker_sum'] = timing_raw.get('cal_worker_sum', 0.0) + sum(worker_times)
+                                timing_raw['cal_worker_max'] = max(timing_raw.get('cal_worker_max', 0.0), max(worker_times))
 
                             mem_before_cal_global = _capture_gpu_memory_mb()
                             with _timer('cal_global', timing_raw):
@@ -1881,6 +1905,7 @@ class RayPPOTrainer(object):
                                                   num_repeat=self.config.actor_rollout_ref.rollout.n)
                     
                     metrics.update(compute_response_metrics(batch=batch))
+                    
 
                     if use_calculator and 'calculator_results' in batch.batch:
                         metrics.update(
@@ -1931,6 +1956,10 @@ class RayPPOTrainer(object):
                     memory_raw=memory_raw,
                     metric_profile={k: metric_profile_step.get(k, 0.0) for k in metric_profile_step}
                 ))
+                if 'cal_worker_sum' in timing_raw:
+                    metrics['timing_s/cal_worker_sum'] = timing_raw['cal_worker_sum']
+                if 'cal_worker_max' in timing_raw:
+                    metrics['timing_s/cal_worker_max'] = timing_raw['cal_worker_max']
                 if metric_profile_step:
                     total_response_tokens = torch.sum(response_info['response_length']).item()
                     for name, elapsed in metric_profile_step.items():

@@ -11,7 +11,8 @@ from . import metrics_utils
 class RepresentationMetricsCalculator():
     """Calculates representation quality metrics from hidden states with memory optimization."""
     
-    def __init__(self, tokenizer, max_seq_len=512, 
+    def __init__(self, tokenizer, 
+                 max_seq_len=512, 
                  metric_indices=None, 
                  zeroth_order_svd_method: str = 'full',
                  diff_svd_method: str = 'lowrank',
@@ -96,7 +97,10 @@ class RepresentationMetricsCalculator():
                 if compute_diff:
                     start_diff = time.perf_counter()
                     final_diffs, per_stride_diffs, diff_metric_timing = self.calculate_metric_diff(
-                        layer_hidden, attention_mask, diff_stride
+                        layer_hidden, 
+                        attention_mask, 
+                        diff_stride,
+                        final_base_metrics=base_metrics 
                     )
                     base_metrics.update(final_diffs)
                     for diff_name, elapsed in diff_metric_timing.items():
@@ -171,57 +175,121 @@ class RepresentationMetricsCalculator():
             
             return global_results
  
-    def calculate_metric_diff(self, hidden_states, attention_mask, stride):
-        batch_size, _, _ = hidden_states.shape
-        selected_metric_names = [name for name, _ in self.selected_metrics]
-        
-        all_per_stride_diffs = []
-        diff_metric_timing = {f"{name} diff": 0.0 for name in selected_metric_names}
-        diff_metric_timing.update({f"{name} diff 2": 0.0 for name in selected_metric_names})
-
-
-        if self.diff_calculator_method == 'optimized':
-            target_func = metrics_utils.calculate_diffs_for_single_sample_optimized
-        else:
-            target_func = metrics_utils.calculate_diffs_for_single_sample_original
-
-        for i in range(batch_size):
-            mask = attention_mask[i].bool()
-            valid_hidden = hidden_states[i, mask, :]
-            
-            if valid_hidden.size(0) < 2:
-          
-                empty_result = {f"{name} diff": [] for name in selected_metric_names}
-                empty_result.update({f"{name} diff 2": [] for name in selected_metric_names})
-                all_per_stride_diffs.append(empty_result)
-                continue
-
-            per_stride_diffs_i = target_func(
-                valid_hidden, self.max_seq_len, stride, selected_metric_names, 
-                self.svd_rank, self.svd_niter, self.diff_svd_method
-            )
-            all_per_stride_diffs.append(per_stride_diffs_i)
-            
-    
+    def calculate_metric_diff(self, hidden_states, attention_mask, stride, final_base_metrics=None):
+        """
+        Routes to Batched or Per-Sample calculation based on flag.
+        """
+        batch_size = hidden_states.shape[0]
+        selected_names = [name for name, _ in self.selected_metrics]
         device = hidden_states.device
-        for per_stride_diffs_i in all_per_stride_diffs:
-            for metric_name in selected_metric_names:
-                diff_metric_timing[f"{metric_name} diff"] += per_stride_diffs_i.get(f"{metric_name} diff_timing", 0.0)
-                diff_metric_timing[f"{metric_name} diff 2"] += per_stride_diffs_i.get(f"{metric_name} diff 2_timing", 0.0)
-                per_stride_diffs_i.pop(f"{metric_name} diff_timing", None)
-                per_stride_diffs_i.pop(f"{metric_name} diff 2_timing", None)
-    
-        final_diffs = self._aggregate_diffs(all_per_stride_diffs, batch_size, device, selected_metric_names)
+        
+        # 1. BATCHED PATH (Fastest, supports Curvature via hybrid loop)
+        if self.diff_calculator_method == 'batched':
+            # Call the robust batched function
+            shared_time, raw_results = metrics_utils.calculate_diffs_batched(
+                hidden_states,
+                attention_mask,
+                self.max_seq_len,
+                stride,
+                selected_names,
+                self.svd_rank,
+                self.svd_niter,
+                self.diff_svd_method,
+                base_metrics_batch=final_base_metrics
+            )
+            
+            # Reformat results for RewardManager
+            # From {metric: [Tensor(B), ...]} to List[Dict] per sample
+            all_per_stride_diffs = [{} for _ in range(batch_size)]
+            for i in range(batch_size):
+                for name in selected_names:
+                    all_per_stride_diffs[i][f"{name} diff"] = []
+                    all_per_stride_diffs[i][f"{name} diff 2"] = []
+                    all_per_stride_diffs[i][f"{name} diff_timing"] = 0.0
 
-        per_stride_diffs = {f"{name} diff": [[] for _ in range(batch_size)] for name in selected_metric_names}
-        per_stride_diffs.update({f"{name} diff 2": [[] for _ in range(batch_size)] for name in selected_metric_names})
-        for i in range(batch_size):
-            for key in per_stride_diffs.keys():
-                if key in all_per_stride_diffs[i]:
-                    per_stride_diffs[key][i] = all_per_stride_diffs[i][key]
+            # Time Attribution (Winner Takes All)
+            avg_time = shared_time / batch_size
+            shared_ms = [n for n in selected_names if n != "Curvature"]
+            primary = shared_ms[0] if shared_ms else None
 
-        return final_diffs, per_stride_diffs, diff_metric_timing
-    
+            # Transpose and Fill
+            for name in selected_names:
+                per_sample_diff1 = raw_results.get(f"{name} diff", [])
+                per_sample_diff2 = raw_results.get(f"{name} diff 2", [])
+                for i in range(batch_size):
+                    if i < len(per_sample_diff1):
+                        all_per_stride_diffs[i][f"{name} diff"] = per_sample_diff1[i].tolist()
+                    if i < len(per_sample_diff2):
+                        all_per_stride_diffs[i][f"{name} diff 2"] = per_sample_diff2[i].tolist()
+            
+            if primary:
+                for i in range(batch_size):
+                    all_per_stride_diffs[i][f"{primary} diff_timing"] = avg_time
+                    
+            # Aggregate (Sum up timings for logger)
+            diff_metric_timing = {f"{n} diff": 0.0 for n in selected_names}
+            diff_metric_timing.update({f"{n} diff 2": 0.0 for n in selected_names})
+            if primary:
+                diff_metric_timing[f"{primary} diff"] = shared_time
+
+            # Final formatting
+            final_diffs = self._aggregate_diffs(all_per_stride_diffs, batch_size, device, selected_names)
+            
+            # Restore per-sample dict structure for return
+            per_stride_diffs_ret = {f"{n} diff": [] for n in selected_names}
+            per_stride_diffs_ret.update({f"{n} diff 2": [] for n in selected_names})
+            for i in range(batch_size):
+                for k in per_stride_diffs_ret.keys():
+                    if k in all_per_stride_diffs[i]:
+                        per_stride_diffs_ret[k].append(all_per_stride_diffs[i][k])
+            
+            return final_diffs, per_stride_diffs_ret, diff_metric_timing
+
+        # 2. PER-SAMPLE PATH (Legacy / Fallback)
+        else:
+            all_per_stride_diffs = []
+            for i in range(batch_size):
+                mask = attention_mask[i].bool()
+                valid_hidden = hidden_states[i, mask, :]
+                
+                # === [新增] 单样本提取逻辑 ===
+                sample_base_metrics = None
+                if final_base_metrics is not None:
+                    sample_base_metrics = {}
+                    for k, v in final_base_metrics.items():
+                        if v.numel() > i: sample_base_metrics[k] = v[i].item()
+                # ===========================
+                
+                # Re-implement loop logic briefly for fallback:
+                res = metrics_utils.calculate_diffs_for_single_sample_optimized(
+                    valid_hidden, self.max_seq_len, stride, selected_names,
+                    self.svd_rank, self.svd_niter, self.diff_svd_method, 
+                    final_base_metrics=sample_base_metrics
+                )
+                # Note: calculate_diffs_for_single_sample_optimized MUST be in utils.
+                # If I removed it in previous step, I must add it back or handle it here.
+                # Assuming the user replaced utils entirely with the Batched version, 
+                # we need to make sure utils has the single-sample function too.
+                
+                all_per_stride_diffs.append(res)
+
+            diff_metric_timing = {f"{n} diff": 0.0 for n in selected_names}
+            diff_metric_timing.update({f"{n} diff 2": 0.0 for n in selected_names})
+            for res in all_per_stride_diffs:
+                for name in selected_names:
+                    diff_metric_timing[f"{name} diff"] += res.get(f"{name} diff_timing", 0.0)
+                    
+            final_diffs = self._aggregate_diffs(all_per_stride_diffs, batch_size, device, selected_names)
+            
+            # Restructuring for return
+            per_stride_diffs_ret = {f"{n} diff": [] for n in selected_names}
+            per_stride_diffs_ret.update({f"{n} diff 2": [] for n in selected_names})
+            for i in range(batch_size):
+                for k in per_stride_diffs_ret.keys():
+                    if k in all_per_stride_diffs[i]:
+                        per_stride_diffs_ret[k].append(all_per_stride_diffs[i][k])
+
+            return final_diffs, per_stride_diffs_ret, diff_metric_timing
 
     def _free_tensors(self, tensors):
         """

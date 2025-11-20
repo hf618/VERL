@@ -24,10 +24,11 @@ import torch.distributed
 from torch.distributed.device_mesh import init_device_mesh
 import verl.utils.hdfs_io as hdfs_io
 import verl.utils.torch_functional as verl_F
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig, open_dict, OmegaConf
 from verl import DataProto
 from verl.single_controller.base import Worker
 from verl.single_controller.base.decorator import register, Dispatch
+from verl.trainer.metrics_calculator import RepresentationMetricsCalculator
 from verl.utils import hf_tokenizer
 from verl.utils.debug import log_gpu_memory_usage
 from verl.utils.fs import copy_local_path_from_hdfs
@@ -109,6 +110,7 @@ class ActorRolloutRefWorker(Worker):
         self._is_offload_param = False
         self._is_offload_grad = False
         self._is_offload_optimizer = False
+        self._calculator = None  # lazy init per worker GPU
         if self._is_actor:
             self._is_offload_param = self.config.actor.fsdp_config.get('param_offload', False)
             self._is_offload_grad = self.config.actor.fsdp_config.get('grad_offload', False)
@@ -498,6 +500,48 @@ class ActorRolloutRefWorker(Worker):
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
             output = self.rollout_sharding_manager.postprocess_data(output)
+        # 在 worker 的 GPU 上计算 diff，避免把大 hidden_states 回传给 driver 再算
+        calc_cfg = OmegaConf.select(self.config, 'calculator', default=None) if OmegaConf.is_config(self.config) else None
+        data_cfg = OmegaConf.select(self.config, 'data', default=None) if OmegaConf.is_config(self.config) else None
+        
+        if (
+            calc_cfg is not None
+            and calc_cfg.get('enable', False)
+            and 'hidden_states_decode' in output.batch
+            and output.batch['hidden_states_decode'] is not None
+        ):
+            # data.max_response_length 可能未下发到 rollout 子 config，回退到 rollout.response_length
+            max_seq_len = None
+            if data_cfg is not None:
+                max_seq_len = data_cfg.get('max_response_length', None)
+            if max_seq_len is None and hasattr(self.config, 'rollout'):
+                max_seq_len = getattr(self.config.rollout, 'response_length', None)
+            
+            if self._calculator is None:
+                self._calculator = RepresentationMetricsCalculator(
+                    tokenizer=self.tokenizer,
+                    max_seq_len=max_seq_len,
+                    compute_log_effective_rank=calc_cfg.get('compute_log_effective_rank', False),
+                    metric_indices=calc_cfg.get('metric_indices', None),
+                    svd_rank=calc_cfg.get('svd_rank', 0),
+                    svd_niter=calc_cfg.get('svd_niter', 1),
+                    zeroth_order_svd_method=calc_cfg.get('zeroth_order_svd_method', 'full'),
+                    diff_svd_method=calc_cfg.get('diff_svd_method', 'full'),
+                    diff_calculator_method=calc_cfg.get('diff_calculator_method', 'optimized'),
+                )
+            prompt_len = output.batch['prompts'].shape[1]
+            response_attention_mask = output.batch['attention_mask'][:, prompt_len:]
+            diff_stride = calc_cfg.get('diff_stride', 20)
+            calc_results, calc_profile = self._calculator(
+                hidden_states=output.batch['hidden_states_decode'],
+                attention_mask=response_attention_mask,
+                compute_diff=True,
+                diff_stride=diff_stride,
+            )
+            output.batch['calculator_results'] = calc_results
+            if output.meta_info is None:
+                output.meta_info = {}
+            output.meta_info['calc_metric_profile'] = calc_profile
 
         output = output.to('cpu')
 
@@ -526,7 +570,34 @@ class ActorRolloutRefWorker(Worker):
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
             output = self.actor.compute_log_prob(data=data)
-            output = DataProto.from_dict(tensors={'old_log_probs': output},
+            # 可选：基于 logits 的响应段平均熵
+            avg_logits_entropy = None
+            if isinstance(output, tuple) and len(output) == 2:
+                # 允许 compute_log_prob 返回 (log_probs, logits) 形式
+                log_probs, logits = output
+            else:
+                log_probs, logits = output, None
+
+            if logits is not None and self.config.rollout.get('return_logits_entropy', False):
+                # logits: [B, T, V] 对应 response 部分
+                # data.meta_info 里带着 max_token_len 等信息；我们只对 response 长度部分算熵
+                attn = data.batch['attention_mask']
+                prompt_len = attn.shape[1] - log_probs.shape[1]
+                resp_mask = attn[:, prompt_len:]
+                # 只取 response 段的 logits
+                logits_resp = logits[:, -resp_mask.shape[1]:]
+                # softmax 计算熵
+                log_probs_full = torch.log_softmax(logits_resp, dim=-1)
+                probs_full = torch.exp(log_probs_full)
+                token_entropy = -(probs_full * log_probs_full).sum(dim=-1)  # [B, T]
+                denom = resp_mask.sum(dim=-1).clamp_min(1)
+                avg_logits_entropy = (token_entropy * resp_mask).sum(dim=-1) / denom
+
+            tensors = {'old_log_probs': log_probs}
+            if avg_logits_entropy is not None:
+                tensors['avg_logits_entropy'] = avg_logits_entropy
+
+            output = DataProto.from_dict(tensors=tensors,
                                          meta_info={'temperature': self.config.rollout.temperature})
             output = self.ulysses_sharding_manager.postprocess_data(output)
 

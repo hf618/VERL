@@ -204,14 +204,15 @@ def main_task(config, compute_score=None):
 
     
     calculator = RepresentationMetricsCalculator(tokenizer=tokenizer, 
+                                                 max_seq_len=config.data.max_response_length,
                                                  compute_log_effective_rank=config.calculator.compute_log_effective_rank,
                                                  metric_indices=config.calculator.get('metric_indices', None),
-                                                svd_rank=config.calculator.svd_rank, 
+                                                 svd_rank=config.calculator.svd_rank, 
                                                  svd_niter=config.calculator.svd_niter,
                                                  zeroth_order_svd_method=config.calculator.zeroth_order_svd_method, 
                                                  diff_svd_method=config.calculator.diff_svd_method,
                                                  diff_calculator_method=config.calculator.diff_calculator_method
-                                        )
+                                                )
 
     _validate_reward_configuration(config, calculator)
 
