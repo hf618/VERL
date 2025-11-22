@@ -603,6 +603,9 @@ class RayPPOTrainer(object):
         self.val_reward_fn = val_reward_fn
         self.calculator = calculator
         self.additional_metric_names = _ensure_sequence(self.config.trainer.get('metric_indices_add', []))
+        if 'avg_logits_entropy' in self.additional_metric_names:
+            with open_dict(self.config.actor_rollout_ref.rollout):
+                self.config.actor_rollout_ref.rollout['return_logits_entropy'] = True
 
         self.hybrid_engine = config.actor_rollout_ref.hybrid_engine
         assert self.hybrid_engine, 'Currently, only support hybrid engine'

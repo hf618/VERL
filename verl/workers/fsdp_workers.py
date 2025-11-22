@@ -566,32 +566,16 @@ class ActorRolloutRefWorker(Worker):
         data.meta_info['max_token_len'] = self.config.rollout.log_prob_max_token_len_per_gpu
         data.meta_info['use_dynamic_bsz'] = self.config.rollout.log_prob_use_dynamic_bsz
         data.meta_info['temperature'] = self.config.rollout.temperature
+        data.meta_info['return_logits_entropy'] = self.config.rollout.get('return_logits_entropy', False)
         # perform recompute log_prob
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
             output = self.actor.compute_log_prob(data=data)
-            # 可选：基于 logits 的响应段平均熵
             avg_logits_entropy = None
             if isinstance(output, tuple) and len(output) == 2:
-                # 允许 compute_log_prob 返回 (log_probs, logits) 形式
-                log_probs, logits = output
+                log_probs, avg_logits_entropy = output
             else:
-                log_probs, logits = output, None
-
-            if logits is not None and self.config.rollout.get('return_logits_entropy', False):
-                # logits: [B, T, V] 对应 response 部分
-                # data.meta_info 里带着 max_token_len 等信息；我们只对 response 长度部分算熵
-                attn = data.batch['attention_mask']
-                prompt_len = attn.shape[1] - log_probs.shape[1]
-                resp_mask = attn[:, prompt_len:]
-                # 只取 response 段的 logits
-                logits_resp = logits[:, -resp_mask.shape[1]:]
-                # softmax 计算熵
-                log_probs_full = torch.log_softmax(logits_resp, dim=-1)
-                probs_full = torch.exp(log_probs_full)
-                token_entropy = -(probs_full * log_probs_full).sum(dim=-1)  # [B, T]
-                denom = resp_mask.sum(dim=-1).clamp_min(1)
-                avg_logits_entropy = (token_entropy * resp_mask).sum(dim=-1) / denom
+                log_probs = output
 
             tensors = {'old_log_probs': log_probs}
             if avg_logits_entropy is not None:

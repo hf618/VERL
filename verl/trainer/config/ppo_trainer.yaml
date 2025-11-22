@@ -102,6 +102,7 @@ actor_rollout_ref:
     return_hidden_states: False
     return_decode: False
     return_prefill: False
+    return_logits_entropy: False
 
 critic:
   strategy: fsdp

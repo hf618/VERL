@@ -150,7 +150,7 @@ class DataParallelPPOActor(BasePPOActor):
         self.actor_optimizer.step()
         return grad_norm
 
-    def compute_log_prob(self, data: DataProto) -> torch.Tensor:
+    def compute_log_prob(self, data: DataProto) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute the log probability of the responses given input_ids, attention_mask and position_ids
 
         Args:
@@ -186,19 +186,31 @@ class DataParallelPPOActor(BasePPOActor):
             micro_batches = batch.split(micro_batch_size)
 
         log_probs_lst = []
+        entropy_avg_lst = []
         for micro_batch in micro_batches:
             with torch.no_grad():
-                _, log_probs = self._forward_micro_batch(micro_batch, temperature=temperature)
+                entropy, log_probs = self._forward_micro_batch(micro_batch, temperature=temperature)
             log_probs_lst.append(log_probs)
+            
+            if data.meta_info.get('return_logits_entropy', False):
+                # mask over response part (last response_length positions)
+                resp_len = micro_batch['responses'].size(1)
+                resp_mask = micro_batch['attention_mask'][:, -resp_len:]
+                denom = resp_mask.sum(dim=-1).clamp_min(1)
+                entropy_avg = (entropy * resp_mask).sum(dim=-1) / denom
+                entropy_avg_lst.append(entropy_avg)
         log_probs = torch.concat(log_probs_lst, dim=0)
+        entropy_avg = torch.concat(entropy_avg_lst, dim=0) if entropy_avg_lst else None
 
         if use_dynamic_bsz:
             indices = list(itertools.chain.from_iterable(indices))
             assert len(indices) == log_probs.size(0), f"{len(indices)} vs. {log_probs.size()}"
             revert_indices = torch.tensor(get_reverse_idx(indices), dtype=torch.long)
             log_probs = log_probs[revert_indices]
+            if entropy_avg is not None:
+                entropy_avg = entropy_avg[revert_indices]
 
-        return log_probs
+        return (log_probs, entropy_avg) if entropy_avg is not None else log_probs
 
     def update_policy(self, data: DataProto):
         # make sure we are in training mode
