@@ -18,7 +18,3 @@ env/
 *.egg-info/
 dist/
 build/
-
-# Local environment variables
-./train1.sh
-train.sh
