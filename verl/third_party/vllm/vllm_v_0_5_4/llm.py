@@ -234,11 +234,11 @@ class LLM(LLM):
                     logprobs.append(torch.tensor(logprob))
                     
     
-            # 处理 hidden_states, 依次装入 hidden_states_decode_list 长度为 micro bs * rollouts n
+            # Process hidden_states: append to hidden_states_decode_list with length micro bs * rollouts n
             if hasattr(request_output, 'hidden_states_decode') and request_output.hidden_states_decode is not None:
                 for hidden_state in request_output.hidden_states_decode:
                     hidden_states_decode_list.append(hidden_state)
-            # 处理 hidden_states_prefill，依次装入 hidden_states_prefill_list 长度为 micro bs
+            # Process hidden_states_prefill: append to hidden_states_prefill_list with length micro bs
             if hasattr(request_output, 'hidden_states_prefill') and request_output.hidden_states_prefill is not None:
                 for hidden_state in request_output.hidden_states_prefill:
                     hidden_states_prefill_list.append(hidden_state)
@@ -248,13 +248,13 @@ class LLM(LLM):
         if len(logprobs) > 0:
             logprobs = pad_sequence(logprobs, batch_first=True, padding_value=pad_token_id)
         
-        # 处理 hidden_states_decode, m个prompt有n*m个rollouts, 需要右填充, (micro bs * rollouts n, pad max 1, layers, feat_dim)
+        # Process hidden_states_decode: m prompts have n*m rollouts, right-pad to (micro bs * rollouts n, pad max 1, layers, feat_dim)
         if len(hidden_states_decode_list) > 0:
-            hidden_states_decode = pad_sequence(hidden_states_decode_list, batch_first=True, padding_value=pad_token_id)  # 原本 padding_value=pad_token_id 我现在换成 0
+            hidden_states_decode = pad_sequence(hidden_states_decode_list, batch_first=True, padding_value=pad_token_id)  # Originally padding_value=pad_token_id, now changed to 0
         else:
             hidden_states_decode = None
    
-        # 处理 hidden_states_prefill, 一个prompt只有一个 无需预padding (之前已经pad)， (micro bs, pad max 2, layers, feat_dim)
+        # Process hidden_states_prefill: each prompt has one entry, no extra padding needed (already padded), shape (micro bs, pad max 2, layers, feat_dim)
         if len(hidden_states_prefill_list) > 0:
             hidden_states_prefill = torch.stack(hidden_states_prefill_list, dim=0)
         else:
@@ -267,5 +267,4 @@ class LLM(LLM):
 
     def offload_model_weights(self) -> None:
         self.llm_engine.offload_model_weights()
-
 

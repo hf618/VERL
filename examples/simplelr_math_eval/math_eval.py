@@ -234,7 +234,7 @@ def main(llm, tokenizer, data_name, args):
     examples, processed_samples, out_file, metrics_out_file, stride_details_out_file = prepare_data(data_name, args)
 
 
-    # 初始化 RepresentationMetricsCalculator
+    # Initialize RepresentationMetricsCalculator
     metrics_calculator = None
     if args.calculate_metrics:
         print("Representation metrics calculation is enabled.")
@@ -382,11 +382,11 @@ def main(llm, tokenizer, data_name, args):
                 for output in outputs:
    
                     if output.hidden_states[0] is not None:
-                        hidden_states_list.append(output.hidden_states[0].to(torch.bfloat16))  # 确保转换为 float16
+                        hidden_states_list.append(output.hidden_states[0].to(torch.bfloat16))  # Ensure conversion to float16
                     else:
                         print("Warning: `hidden_states` not found in vLLM output. Metrics calculation will be skipped.")
                         args.calculate_metrics = False
-                        break # 后续不再检查
+                        break # Skip further checks
 
             outputs = [(output.outputs[0].text, output.outputs[0].finish_reason) for output in outputs]
 
@@ -445,7 +445,7 @@ def main(llm, tokenizer, data_name, args):
 
 
     all_aggregated_metrics_data = []
-    all_stride_details_data = [] # <--- 新增
+    all_stride_details_data = [] # <--- Added
     if args.calculate_metrics and metrics_calculator:
         print("Calculating representation metrics...")
 
@@ -455,12 +455,11 @@ def main(llm, tokenizer, data_name, args):
         
         for i, sample in enumerate(tqdm(samples, desc="Calculating Metrics")):
             hidden_states = hidden_states_list[i]
-            if hidden_states is None or hidden_states.dim() != 3: # 确保是3D张量 (seq_len, num_layers, hidden_dim)
+            if hidden_states is None or hidden_states.dim() != 3: # Ensure a 3D tensor (seq_len, num_layers, hidden_dim)
                 print(f"Skipping sample {i} due to invalid hidden_states.")
                 continue
             
-
-            seq_len = hidden_states.shape[0] # 注意：现在 seq_len 在第0维
+            seq_len = hidden_states.shape[0] # Note: seq_len is now on dimension 0
             attention_mask = torch.ones(seq_len, device=hidden_states.device)
 
  

@@ -1289,7 +1289,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                                    is_prompt=is_prompt,
                                    virtual_engine=virtual_engine)
 
-    @staticmethod  # 添加静态方法装饰器
+    @staticmethod  # Add staticmethod decorator
     def pad_tensor_left(tensor: torch.Tensor, target_length: int, pad_value: float = 0.0) -> torch.Tensor:
         """Left pad a tensor along dim=0 to reach target_length."""
         current_length = tensor.size(0)
@@ -1404,7 +1404,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             sampling_metadata=model_input.sampling_metadata,
         )
         
-        # 古法设置采样哪部分的 hidden states
+        # Legacy control over which hidden states to sample
 
         return_prefill = self.return_prefill
         return_decode = self.return_decode
@@ -1421,12 +1421,12 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
 
                 if return_prefill:
 
-                    # 从模型中获取包含所有层隐藏状态的列表。
+                    # Pull the list of hidden states for all layers from the model
                     all_hidden_states_from_model = model_executable.model.all_hidden_states
                     
-                    # 检查确保我们拿到了数据
+                    # Ensure we actually got data
                     if all_hidden_states_from_model:
-                        # 计算每个 prompt 的长度 (您的逻辑是正确的，我们继续使用)
+                        # Compute each prompt length (keeping your existing logic)
                         prompt_lens = []
                         last_index = -1
                         for index_val in indices:
@@ -1434,14 +1434,14 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                             prompt_lens.append(current_index - last_index)
                             last_index = current_index
 
-                        # 对每一层的隐藏状态张量进行切分
-                        # 结果是一个二维列表，结构为 [layer][prompt]
+                        # Split each layer's hidden state tensor
+                        # Resulting structure: [layer][prompt]
                         states_split_by_layer = [
                             torch.split(layer_states, prompt_lens, dim=0)
                             for layer_states in all_hidden_states_from_model
                         ]
 
-                        # "转置"数据结构，从 [layer][prompt] 变为 [prompt][layer]
+                        # "Transpose" structure from [layer][prompt] to [prompt][layer]
                         num_prompts = len(prompt_lens)
                         num_layers = len(all_hidden_states_from_model)
                         
@@ -1450,8 +1450,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                             for prompt_idx in range(num_prompts)
                         ]
 
-                        # 将每个 prompt 的所有层堆叠成一个张量，并创建最终列表
-                        # 最终得到的列表中，每个元素是一个形状为 (micro bs, num_tokens, num_layers, hidden_dim) 的张量
+                        # Stack all layers for each prompt and assemble the final list
+                        # Each element becomes a tensor shaped (micro bs, num_tokens, num_layers, hidden_dim)
                         final_prefill_states_list = []
                         prompt_tensors = []
                         max_seq_len = max(tensor.size(0) for prompt_layers in states_by_prompt_then_layer for tensor in prompt_layers)
@@ -1472,7 +1472,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                         all_prompts_tensor = torch.stack(prompt_tensors, dim=0).to('cpu')
                         final_prefill_states_list = [all_prompts_tensor]
 
-                        # 将处理好的数据附加到 output 对象上
+                        # Attach the processed data to the output object
                         if not hasattr(output, 'hidden_states_prefill'):
                             output.hidden_states_prefill = final_prefill_states_list
 

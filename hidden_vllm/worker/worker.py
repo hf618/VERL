@@ -99,7 +99,7 @@ class Worker(LocalOrDistributedWorkerBase):
             is_driver_worker=is_driver_worker,
             prompt_adapter_config=prompt_adapter_config,
             multimodal_config=multimodal_config,
-            return_hidden_states=False,  # <--- 仅在 draft_model_config 是 mlp_speculator 时才需要
+            return_hidden_states=False,  # <--- Only needed when draft_model_config is mlp_speculator
             **speculative_args,
         )
         # Uninitialized cache engine. Will be initialized by

@@ -99,17 +99,17 @@ global_executor = GlobalProcessPool.get_instance(max_workers=16)
 
 def extract_last_boxed(text):
     """
-    提取 LaTeX 文本中最后一个 \boxed 命令中的内容
+    Extract the content of the last \boxed command in LaTeX text.
     
-    返回:
-    - str: 最后一个 \boxed 中的内容。如果没有找到则返回 None
+    Returns:
+    - str: Content inside the last \boxed. Returns None if not found.
     """
     pattern = r'\\boxed\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}'
     
-    # 找到所有匹配
+    # Find all matches
     matches = list(re.finditer(pattern, text))
     
-    # 如果找到匹配，返回最后一个的内容
+    # Return the last match if any exist
     if matches:
         return matches[-1].group(0)
     return None
@@ -132,20 +132,20 @@ def extract_solution(solution_str):
 
 def qwen_math_equal_subprocess(prediction, reference, timeout_seconds=10):
     """
-    使用 ProcessPoolExecutor 实现带超时的函数执行
+    Execute math comparison with a timeout using ProcessPoolExecutor.
     
     Args:
-        prediction: 预测结果
-        reference: 参考答案
-        timeout_seconds: 超时时间(秒)
+        prediction: Prediction result
+        reference: Reference answer
+        timeout_seconds: Timeout in seconds
         
     Returns:
-        bool: 执行结果,超时返回 False
+        bool: Execution result; returns False on timeout
     """
     try:
-        # 提交任务到进程池
+        # Submit task to the process pool
         future = global_executor.submit(qwen_math_equal, prediction=prediction, reference=reference, timeout=False)
-        # 等待结果,支持超时
+        # Wait for the result with timeout support
         result = future.result(timeout=timeout_seconds)
         return result
     except TimeoutError:

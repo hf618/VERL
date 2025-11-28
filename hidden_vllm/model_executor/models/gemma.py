@@ -281,7 +281,7 @@ class GemmaModel(nn.Module):
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         
-        self.all_hidden_states = []  # 每次 forward 前清空
+        self.all_hidden_states = []  # Clear before each forward pass
 
         if inputs_embeds is not None:
             hidden_states = inputs_embeds
@@ -298,7 +298,7 @@ class GemmaModel(nn.Module):
                 attn_metadata,
                 residual,
             )
-        self.all_hidden_states.append(hidden_states.detach().clone().to( torch.bfloat16))  # 保存最终 norm 输出
+        self.all_hidden_states.append(hidden_states.detach().clone().to(torch.bfloat16))  # Save the final normalized output
         hidden_states, _ = self.norm(hidden_states, residual)
         ####breakpoint(()
         return hidden_states

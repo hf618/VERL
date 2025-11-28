@@ -495,7 +495,7 @@ def clean_units(pred_str: str):
 
 #     return pred
 
-#关键提取函数
+# Key extraction function
 def extract_answer(pred_str, data_name, use_last_number=True):
     pred_str = pred_str.replace("\u043a\u0438", "")
     if data_name in ["mmlu_stem", "sat_math", "aqua", "gaokao2023"]: #skip for math benchmark
@@ -583,7 +583,7 @@ def parse_ground_truth(example: Dict[str, Any], data_name):
         return example["gt_cot"], gt_ans
 
     # parse ground truth
-    if data_name in ["math", "minerva_math", "math500"]:  #关键代码
+    if data_name in ["math", "minerva_math", "math500"]:  # Key logic
         gt_cot = example["solution"]
         gt_ans = extract_answer(gt_cot, data_name)
     elif data_name == "gsm8k":

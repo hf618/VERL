@@ -90,7 +90,7 @@ actor_rollout_ref:
     max_num_seqs: 32
     model_path: ${actor_rollout_ref.model.path}
     log_prob_micro_batch_size: null # will be deprecated, use log_prob_micro_batch_size_per_gpu
-    log_prob_micro_batch_size_per_gpu: 2  # 设置为与ppo_micro_batch_size_per_gpu相同的值
+    log_prob_micro_batch_size_per_gpu: 2  # Set to match ppo_micro_batch_size_per_gpu
     log_prob_use_dynamic_bsz: ${actor_rollout_ref.actor.use_dynamic_bsz}
     log_prob_max_token_len_per_gpu: ${actor_rollout_ref.actor.ppo_max_token_len_per_gpu}
     disable_log_stats: True
@@ -197,7 +197,7 @@ trainer:
   val_only: False
   metric_indices_add: []  # additional metrics beyond selected effective rank metrics (e.g. 'avg_logits_entropy')
   plot_config:
-    mode: disable # 可选: disable, exploit, explore, allin
+    mode: disable # Options: disable, exploit, explore, allin
     x_metrics: ['Effective Rank'] # a list of metrics for x axis
     y_metrics: ['exploration_token_jsd'] # a list of metrics for y axis
     layer: 1

@@ -252,7 +252,7 @@ class RepresentationMetricsCalculator():
                 mask = attention_mask[i].bool()
                 valid_hidden = hidden_states[i, mask, :]
                 
-                # === [新增] 单样本提取逻辑 ===
+                # === [Added] Per-sample extraction logic ===
                 sample_base_metrics = None
                 if final_base_metrics is not None:
                     sample_base_metrics = {}

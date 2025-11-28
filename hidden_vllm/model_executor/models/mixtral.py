@@ -286,7 +286,7 @@ class MixtralModel(nn.Module):
     ) -> torch.Tensor:
         
 
-        self.all_hidden_states = []  # 每次 forward 前清空
+        self.all_hidden_states = []  # Clear before each forward pass
         
         if get_pp_group().is_first_rank:
             hidden_states = self.embed_tokens(input_ids)
@@ -306,7 +306,7 @@ class MixtralModel(nn.Module):
                 "residual": residual
             })
         hidden_states, _ = self.norm(hidden_states, residual)
-        self.all_hidden_states.append(hidden_states.detach().clone().to(torch.bfloat16))  # 保存最终 norm 输出
+        self.all_hidden_states.append(hidden_states.detach().clone().to(torch.bfloat16))  # Save the final normalized output
         return hidden_states
 
 

@@ -17,13 +17,12 @@ def create_output_by_sequence_group(
     
     for step in outputs:
         for i, sequence_group_output in enumerate(step): # micro bs
-            #  
-            # 使用 torch.stack 替代手动循环
+            # Use torch.stack instead of a manual loop
 
             for j in range(len(sequence_group_output.samples)): # rollouts n
                 #  
                 if hasattr(step, 'hidden_states_decode'):
-                    if step.hidden_states_decode[0].shape[0] == len(sequence_group_output.samples) * len(step.outputs): # 如果已经分叉 rollouts n * micro bs
+                    if step.hidden_states_decode[0].shape[0] == len(sequence_group_output.samples) * len(step.outputs): # If rollouts have already branched into n * micro batch size
                         hidden_states_tensor = torch.stack([hidden_state[i+j] for hidden_state in step.hidden_states_decode])
                     else:
                         hidden_states_tensor = torch.stack([hidden_state[i] for hidden_state in step.hidden_states_decode])
@@ -32,8 +31,8 @@ def create_output_by_sequence_group(
             
             prefill_states = getattr(step, 'hidden_states_prefill', None)
             if prefill_states is not None:
-                # prefill_states[0] 形状为 (micro_bs, seq_len, num_layers, hidden_dim)
-                # 直接获取对应 batch index 的张量
+                # prefill_states[0] has shape (micro_bs, seq_len, num_layers, hidden_dim)
+                # Directly fetch the tensor for the corresponding batch index
                 sequence_group_output.hidden_states_prefill = [prefill_states[0][i]]
             else:
                 sequence_group_output.hidden_states_prefill = None

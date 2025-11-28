@@ -814,7 +814,7 @@ class LLMEngine:
         # Organize outputs by [sequence group][step] instead of
         # [step][sequence group].
         #  
-        output_by_sequence_group = create_output_by_sequence_group( # 这儿都还是16
+        output_by_sequence_group = create_output_by_sequence_group( # Still 16 here
             output, num_seq_groups=len(scheduled_seq_groups))
         
         # Update the scheduled sequence groups with the model outputs.
@@ -919,7 +919,7 @@ class LLMEngine:
                 num_lookahead_slots=scheduler_outputs.num_lookahead_slots,
                 running_queue_size=scheduler_outputs.running_queue_size,
                 finished_requests_ids=finished_requests_ids)
-            output = self.model_executor.execute_model( # 万恶之源，请问如何把sample找到其对应的hidden states
+            output = self.model_executor.execute_model( # Root cause: how to map a sample to its corresponding hidden states
                 execute_model_req=execute_model_req)
         else:
             output = []

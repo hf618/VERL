@@ -5,26 +5,26 @@ import torch
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 
-# --- 关键修复：确保Python能够找到依赖的模块 ---
-# 这个代码块会把您的工具脚本所在的目录添加到Python的搜索路径中
+# --- Key fix: ensure Python can locate dependent modules ---
+# This block adds your tool script directory to Python's search path
 try:
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     module_path = os.path.join(project_root, 'examples', 'simplelr_math_eval')
     if module_path not in sys.path:
         sys.path.append(module_path)
 except NameError:
-    # 为交互式环境（如Jupyter）提供备用路径
+    # Provide a fallback path for interactive environments (e.g., Jupyter)
     module_path = os.path.abspath('./examples/simplelr_math_eval')
     if module_path not in sys.path:
         sys.path.append(module_path)
 
-# 现在可以安全地导入了
+# It is now safe to import
 from metrics_calculator import RepresentationMetricsCalculator
 from data_loader import load_data
 from utils import construct_prompt, set_seed
 
 
-# HTML 模板
+# HTML template
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -99,7 +99,7 @@ def generate_html_visualization(data):
     metric_values = data["metric_values"]
     v_min, v_max = min(metric_values), max(metric_values)
     
-    # --- 分割文本并着色 ---
+    # --- Split text and apply colors ---
     generated_text = data["generated_text"]
     stride = data["stride"]
     segments = []
@@ -121,7 +121,7 @@ def generate_html_visualization(data):
         
     colored_answer = "".join(segments)
 
-    # --- 渲染HTML模板 ---
+    # --- Render the HTML template ---
     html_content = HTML_TEMPLATE.format(
         model_path=data["model_path"],
         dataset=data["dataset"],
@@ -159,7 +159,7 @@ def main():
     args = parse_args()
     set_seed(42)
 
-    # 1. 加载模型和分词器
+    # 1. Load model and tokenizer
     print(f"Loading tokenizer from: {args.init_model_path}")
     tokenizer = AutoTokenizer.from_pretrained(args.init_model_path, trust_remote_code=True)
     
@@ -168,12 +168,12 @@ def main():
         model=args.model_name_or_path,
         trust_remote_code=True,
         dtype=torch.bfloat16,
-        # enforce_eager=True, # 如果您的模型代码未按推荐方式修改，则需要保留此行
+        # enforce_eager=True, # Keep this if your model code wasn't modified as recommended
     )
 
-    # 2. 加载单个问题并构建Prompt
+    # 2. Load a single question and build the prompt
     print(f"Loading dataset '{args.dataset}' to find question '{args.question_idx}'...")
-    # 注意：这里的 data_dir 是硬编码的，与 math_eval.py 保持一致
+    # Note: data_dir is hardcoded here to stay consistent with math_eval.py
     full_dataset = load_data(args.dataset, "test", "./data") 
     question_data = next((item for item in full_dataset if str(item.get("idx")) == args.question_idx), None)
     
@@ -183,13 +183,13 @@ def main():
     prompt_args = argparse.Namespace(prompt_type=args.template, num_shots=0, adapt_few_shot=False)
     prompt = construct_prompt(question_data, args.dataset, prompt_args)
 
-    # 3. 生成回答并获取Hidden States
+    # 3. Generate an answer and capture hidden states
     print(f"Generating answer for question {args.question_idx}...")
     sampling_params = SamplingParams(
         temperature=0.01,
         max_tokens=args.max_tokens_per_call,
     )
-    # 假设您的vLLM有方式返回hidden_states, 例如通过修改模型代码实现
+    # Assumes your vLLM can return hidden_states (e.g., via model code changes)
     vllm_output = llm.generate([prompt], sampling_params, use_tqdm=False)[0]
     
     completion_output = vllm_output.outputs[0]
@@ -201,15 +201,15 @@ def main():
 
     print(f"\nGenerated Text:\n---\n{generated_text}\n---\n")
 
-    # 4. 计算指标
+    # 4. Compute metrics
     print("Calculating metrics per stride...")
     metrics_calculator = RepresentationMetricsCalculator(tokenizer)
     
-    # 假设 hidden_states 的形状是 (seq_len, num_layers, hidden_dim)
+    # Assume hidden_states has shape (seq_len, num_layers, hidden_dim)
     seq_len = hidden_states.shape[0]
     attention_mask = torch.ones(seq_len, device=hidden_states.device)
     
-    orders_to_calc = [0, 1, 2] # 计算所有阶，以便后续选择
+    orders_to_calc = [0, 1, 2] # Compute all orders to allow later selection
     metrics_to_calc = [args.metric_to_visualize]
 
     _, stride_details = metrics_calculator(
@@ -221,14 +221,14 @@ def main():
         orders_to_calc=orders_to_calc
     )
     
-    # 5. 提取用于可视化的特定指标序列
+    # 5. Extract the metric sequence for visualization
     metric_name_to_visualize = args.metric_to_visualize
     if args.order_to_visualize == 1:
         metric_name_to_visualize += " diff"
     elif args.order_to_visualize == 2:
         metric_name_to_visualize += " diff 2"
         
-    layer_to_visualize = '1' # 假设我们只可视化第一层的指标
+    layer_to_visualize = '1' # Assume we only visualize the first layer's metrics
     if not stride_details or layer_to_visualize not in stride_details or metric_name_to_visualize not in stride_details[layer_to_visualize]:
         raise ValueError(f"Could not find metric '{metric_name_to_visualize}' in calculated results. Available metrics: {stride_details.get(layer_to_visualize, {}).keys()}")
         
@@ -237,7 +237,7 @@ def main():
     if not metric_values:
         raise ValueError("The metric value list is empty. This might happen if the generated text is shorter than the stride.")
 
-    # 6. 生成HTML可视化文件
+    # 6. Generate the HTML visualization file
     visualization_data = {
         "model_path": args.model_name_or_path,
         "dataset": args.dataset,

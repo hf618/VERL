@@ -86,17 +86,17 @@ class BaseCheckpointManager:
             working_dir = os.getcwd()
             path = os.path.join(working_dir, path)
 
-        # 使用路径的哈希值作为锁文件名，避免过长的文件名
+        # Use the path hash as the lock filename to avoid overly long names
         lock_filename = f"ckpt_{hash(path) & 0xFFFFFFFF:08x}.lock"
         lock_path = os.path.join(tempfile.gettempdir(), lock_filename)
         
         try:
-            with FileLock(lock_path, timeout=60):  # 添加超时时间
+            with FileLock(lock_path, timeout=60):  # Add a timeout
                 # make a new dir
                 os.makedirs(path, exist_ok=True)
         except Exception as e:
             print(f"Warning: Failed to acquire lock for {path}: {e}")
-            # 即使获取锁失败，也尝试创建目录
+            # Even if the lock fails, still attempt to create the directory
             os.makedirs(path, exist_ok=True)
 
         return path

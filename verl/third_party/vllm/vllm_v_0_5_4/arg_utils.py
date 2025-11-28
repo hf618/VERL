@@ -436,7 +436,7 @@ class EngineArgs:
                 not scheduler_config.use_v2_block_manager):
             raise ValueError("Chunked prefill is not supported with sliding window. "
                              "Set --disable-sliding-window to disable sliding window.")
-        # model_config.hf_config 中包含了 return_hidden_states, return_prefill, return_decode
+        # model_config.hf_config includes return_hidden_states, return_prefill, return_decode
         return EngineConfig(
             model_config=model_config,
             cache_config=cache_config,

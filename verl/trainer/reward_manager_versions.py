@@ -167,8 +167,8 @@ class RewardManager():
 
             if use_aux_reward:
                 # Calculate the 'Percentage Deviation' as the guidance signal
-                # guidance_indicator_name = self.indicator_names[0] # 默认取 effective rank Diff 2
-                guidance_indicator_name = self.guidance_metric # 默认取 effective rank Diff 2
+                # guidance_indicator_name = self.indicator_names[0] # Default to effective rank Diff 2
+                guidance_indicator_name = self.guidance_metric # Default to effective rank Diff 2
                 current_guidance_value = data_item.batch['calculator_results'][layer_key][guidance_indicator_name]
                 ema_baseline = self.mids[guidance_indicator_name]
                 

@@ -185,23 +185,23 @@ class vLLMRollout(BaseRollout):
         batch_size: int,
     ) -> TensorDict:
         """
-        根据生成的数据和隐藏状态，构建最终的批次 TensorDict。
-        此方法将创建批次的核心逻辑封装起来，以提高可读性。
+        Build the final batch TensorDict from generated data and hidden states.
+        This wraps the core batch construction logic to improve readability.
 
         Args:
-            idx: 提示的 token ID。
-            response: 生成的响应的 token ID。
-            seq: 提示和响应拼接后的完整 token ID。
-            attention_mask: 完整的注意力掩码。
-            position_ids: 完整的位置 ID。
-            hidden_states_decode: 解码阶段的隐藏状态 (可能为 None)。
-            hidden_states_prefill: 预填充阶段的隐藏状态 (可能为 None)。
-            batch_size: 最终的批次大小 (可能因 n > 1 而扩大)。
+            idx: Token IDs for prompts.
+            response: Token IDs for generated responses.
+            seq: Full token IDs for prompt plus response.
+            attention_mask: Full attention mask.
+            position_ids: Full position IDs.
+            hidden_states_decode: Hidden states from decode phase (optional).
+            hidden_states_prefill: Hidden states from prefill phase (optional).
+            batch_size: Final batch size (may grow when n > 1).
 
         Returns:
-            一个包含所有数据的 TensorDict。
+            A TensorDict containing all data.
         """
-        # 1. 创建包含所有情况下都存在的基础字段的字典
+        # 1. Create a dict with fields that always exist
         final_data = {
             'prompts': idx,
             'responses': response,
@@ -210,26 +210,26 @@ class vLLMRollout(BaseRollout):
             'position_ids': position_ids,
         }
         
-        # 2. 如果存在，则添加解码阶段的隐藏状态
+        # 2. Add decode hidden states if present
         if hidden_states_decode is not None:
             final_data['hidden_states_decode'] = hidden_states_decode
 
-        # 3. 如果存在，则添加预填充阶段的隐藏状态
+        # 3. Add prefill hidden states if present
         if hidden_states_prefill is not None:
-            # 当 n > 1 时，解码批次大小 (batch_size) 会扩大，
-            # 而预填充批次大小保持不变。此时需要对预填充数据进行扩展以匹配。
+            # When n > 1, the decode batch size grows while prefill stays fixed.
+            # Expand prefill data to keep sizes aligned.
             if hidden_states_prefill.shape[0] != batch_size:
-                # 原始批次大小
+                # Original batch size
                 original_batch_size = batch_size // self.config.n
-                # 创建一个索引来重复 prefill 数据
+                # Create an index to repeat prefill data
                 repeat_indices = torch.arange(original_batch_size, device=hidden_states_prefill.device).repeat_interleave(self.config.n)
-                # 使用索引扩展 prefill hidden states
+                # Expand prefill hidden states with the index
                 final_data['hidden_states_prefill'] = hidden_states_prefill[repeat_indices]
             else:
-                # 如果批次大小匹配，直接使用
+                # If batch sizes already match, use directly
                 final_data['hidden_states_prefill'] = hidden_states_prefill
         
-        # 4. 使用构建好的字典创建并返回 TensorDict
+        # 4. Build and return the TensorDict
         return TensorDict(final_data, batch_size=batch_size)
 
 
@@ -366,8 +366,8 @@ class vLLMRollout(BaseRollout):
         attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
         
 
-        # 这部分代码是之前冗长的 if/elif/else 结构
-        # 现在，我们用一个函数调用来替代它
+        # This replaces the previous verbose if/elif/else structure
+        # with a single function call
         merged_batch = self._build_final_batch(
             idx=idx,
             response=response,
@@ -382,7 +382,7 @@ class vLLMRollout(BaseRollout):
         # free vllm cache engine
         if self.config.free_cache_engine:
             self.inference_engine.free_cache_engine()
-        #  这儿改成返合并
+        # Return the merged batch
         
         return DataProto(batch=merged_batch)
     

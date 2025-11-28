@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
 def parse_args():
-    # 此函数无需修改，与3.0版本相同
+    # This function matches the 3.0 version and needs no changes
     parser = argparse.ArgumentParser(description="Visualize and compare representation metrics with global scaling and rule-based sampling.")
     parser.add_argument("--base_eval_dir", type=str, required=True, help="评估结果的基础目录")
     parser.add_argument("--steps", type=str, required=True, help="要可视化的 global_step 列表，用逗号分隔")
@@ -27,7 +27,7 @@ def parse_args():
     return parser.parse_args()
 
 def load_jsonl_as_dict(path):
-    # 此函数无需修改，与3.0版本相同
+    # This function matches the 3.0 version and needs no changes
     if not os.path.exists(path):
         return None
     data_dict = {}
@@ -38,7 +38,7 @@ def load_jsonl_as_dict(path):
     return data_dict
 
 def get_problem_ids_by_rule(args):
-    """根据规则筛选问题ID"""
+    """Filter problem IDs based on provided rules."""
     print("[*] 正在根据规则筛选问题...")
     try:
         rule = json.loads(args.sampling_rule)
@@ -46,7 +46,7 @@ def get_problem_ids_by_rule(args):
         print(f"[!] 错误: 采样规则 '{args.sampling_rule}' 不是一个有效的JSON字符串。")
         exit(1)
 
-    # ... (函数前半部分逻辑与3.0版本相同)
+    # ... (The earlier logic matches version 3.0)
     first_step_in_rule = list(rule.keys())[0]
     base_filename = f"test_{args.template}_-1_seed0_t{args.temperature}_s0_e-1"
     step_dir = os.path.join(args.base_eval_dir, f"global_step_{first_step_in_rule}", args.dataset)
@@ -80,14 +80,14 @@ def get_problem_ids_by_rule(args):
     print(f"[*] 找到 {len(candidate_ids)} 个符合规则的问题。")
     
     # =======================================================
-    #               【核心修改点】
+    #               Core modification
     # =======================================================
-    # 如果找不到任何样本，则打印错误并直接退出程序
+    # If no samples are found, print an error and exit immediately
     if not candidate_ids:
         print("\n[!] 错误: 没有找到任何符合采样规则的问题。")
         print("    请检查您的 --sampling_rule 或放宽条件。")
         print("    程序将中止，不会生成HTML文件。")
-        exit(1) # 以错误码1退出，阻止后续所有操作
+        exit(1) # Exit with error code 1 to block subsequent steps
     # =======================================================
     
     if len(candidate_ids) < args.num_samples:
@@ -96,14 +96,13 @@ def get_problem_ids_by_rule(args):
         
     return random.sample(candidate_ids, args.num_samples)
 
-# --- 其他所有函数 (get_global_metric_range, generate_visualization_for_one_sample, main) ---
-# --- 均无需任何修改，与3.0版本完全相同。为简洁起见，此处不再重复展示。            ---
-# --- 您只需用上面的新 get_problem_ids_by_rule 函数替换掉旧版本中的对应函数即可。  ---
+# --- All other functions (get_global_metric_range, generate_visualization_for_one_sample, main) remain unchanged from 3.0. ---
+# --- Replace the old get_problem_ids_by_rule with the new one above. ---
 
-# 为了保证您能直接使用，下面仍提供完整的 main 函数及其他部分
+# The full main function and remaining parts are kept below for direct use.
 
 def get_global_metric_range(problem_ids, steps, args):
-    """【新】遍历所有指定样本，计算全局的指标最大最小值"""
+    """New: iterate over samples to compute global min/max for the metric."""
     print("[*] 正在计算全局颜色刻度尺...")
     all_metric_values = []
     base_filename = f"test_{args.template}_-1_seed0_t{args.temperature}_s0_e-1"
@@ -120,7 +119,7 @@ def get_global_metric_range(problem_ids, steps, args):
                     all_metric_values.extend(metric_values)
                     
     if not all_metric_values:
-        return 0, 1 # 返回一个默认范围
+        return 0, 1 # Return a default range
     
     global_min = min(all_metric_values)
     global_max = max(all_metric_values)

@@ -64,10 +64,10 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
 
 
         #  
-        # 检查我们之前在 model_runner.py 中附加的 prefill 隐藏状态是否存在
+        # Check whether prefill hidden states attached in model_runner.py exist
         if hasattr(output, 'hidden_states_prefill'):
-            # 如果存在，将其保存到 SeuqenceGroup 对象的一个新属性上
-            # 这里的逻辑类似于 vLLM 处理 prompt logprobs 的方式
+            # If present, store them on the SequenceGroup similarly to how
+            # vLLM handles prompt logprobs
             if not hasattr(seq_group, 'hidden_states_prefill') and output.hidden_states_prefill is not None:
                 seq_group.hidden_states_prefill = []
                 seq_group.hidden_states_prefill.extend(output.hidden_states_prefill)
@@ -100,7 +100,7 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
             seq = seq_group.seqs[0]
             seq.append_token_id(sample.output_token, sample.logprobs)
             if hasattr(sample, 'hidden_states_decode'):
-                seq.append_hidden_state(sample.output_token, sample.hidden_states_decode) # 当n==1时，加了这句
+                seq.append_hidden_state(sample.output_token, sample.hidden_states_decode) # Added when n == 1
             
             if sampling_params.detokenize and self.detokenizer:
                 new_char_count = self.detokenizer.decode_sequence_inplace(
@@ -156,7 +156,7 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
                 child.append_token_id(child_sample.output_token,
                                       child_sample.logprobs)
                 if hasattr(child_sample, 'hidden_states_decode'):
-                    child.append_hidden_state(child_sample.output_token, child_sample.hidden_states_decode) # 当n>1时，加了这句
+                    child.append_hidden_state(child_sample.output_token, child_sample.hidden_states_decode) # Added when n > 1
                 child_seqs.append((child, parent))
             # Continue the parent sequence for the last child sample.
             # We reuse the parent sequence here to reduce redundant memory
@@ -165,7 +165,7 @@ class SingleStepOutputProcessor(SequenceGroupOutputProcessor):
             parent.append_token_id(last_child_sample.output_token,
                                    last_child_sample.logprobs)
             if hasattr(last_child_sample, 'hidden_states_decode'):
-                parent.append_hidden_state(last_child_sample.output_token, last_child_sample.hidden_states_decode) # 当n>1时，加了这句
+                parent.append_hidden_state(last_child_sample.output_token, last_child_sample.hidden_states_decode) # Added when n > 1
             child_seqs.append((parent, parent))
 
         for seq, _ in child_seqs:

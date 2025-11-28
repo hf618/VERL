@@ -100,17 +100,17 @@ global_executor = GlobalProcessPool.get_instance(max_workers=16)
 
 def extract_last_boxed(text):
     """
-    提取 LaTeX 文本中最后一个 \boxed 命令中的内容
+    Extract the content of the last \boxed command in LaTeX text.
     
-    返回:
-    - str: 最后一个 \boxed 中的内容。如果没有找到则返回 None
+    Returns:
+    - str: Content inside the last \boxed. Returns None if not found.
     """
     pattern = r'\\boxed\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}'
     
-    # 找到所有匹配
+    # Find all matches
     matches = list(re.finditer(pattern, text))
     
-    # 如果找到匹配，返回最后一个的内容
+    # Return the last match if any exist
     if matches:
         return matches[-1].group(0)
     return None
@@ -133,7 +133,7 @@ def extract_last_boxed(text):
 
 def qwen_math_extract_equal_with_timeout_ray(sequence, reference, include_percentage=True, is_close=True, timeout_duration=3):
     """
-    使用Ray的超时机制对math_equal函数进行控制
+    Control math_equal with Ray's timeout mechanism.
     """
     # Extract the answer from the sequence
 
@@ -143,24 +143,24 @@ def qwen_math_extract_equal_with_timeout_ray(sequence, reference, include_percen
         return qwen_math_equal(prediction=extract_answer, reference=reference, timeout=False)
     
     try:
-        # 启动远程任务并等待结果
+        # Start the remote task and wait for the result
         future = _remote_qwen_math_equal.remote(sequence=sequence, reference=reference, include_percentage=include_percentage, is_close=is_close)
         result = ray.get(future, timeout=timeout_duration)
         return result
     except (GetTimeoutError, Exception) as e:
-        # 如果超时或发生其他错误，返回False
+        # On timeout or other errors, return False
         ray.logger.info("Math Eq eval timeout.")
         return False
 
 def extract_solution_r1(solution_str):
-    # 1) 提取 "Assistant: " 后面的实际回答
+    # 1) Extract the actual answer after "Assistant: "
     sequence_after_assistant = solution_str.split("Assistant:")[-1]
     
-    # 2) 正则匹配 <think>...</think> 与 <answer>...</answer>
+    # 2) Use regex to match <think>...</think> and <answer>...</answer>
     think_match = re.search(r"<think>(.*?)</think>", sequence_after_assistant, re.DOTALL)
     
     answer_match = re.search(r"<answer>(.*?)</answer>", sequence_after_assistant, re.DOTALL)
-    # 3) 判断“格式是否符合要求”：两个标签都存在，并且内容非空
+    # 3) Check whether the format is valid: both tags exist and are non-empty
     
     if think_match and answer_match:
         think_content = think_match.group(1).strip()
@@ -172,9 +172,9 @@ def extract_solution_r1(solution_str):
     else:
         format_matched = False
         
-    # 4) 判断“答案是否匹配”
+    # 4) Determine whether the answer matches
     if format_matched:
-        # 如果格式正确，则只用 <answer> 内容来比对答案
+        # If format is correct, compare using only the <answer> content
         model_answer = answer_match.group(1).strip()
         answer_extracted = qwen_extract_answer(model_answer, data_name="math")
         
@@ -183,9 +183,9 @@ def extract_solution_r1(solution_str):
         #     reference=answer
         # )
     else:
-        # 如果格式不正确，则换一种方式检测答案
-        # （示例：直接判断整段内容里是否能匹配出正确答案；
-        #   也可以根据业务需要使用其他逻辑）
+        # If the format is incorrect, use an alternative way to detect the answer
+        # (e.g., directly check whether the full content contains the right answer
+        #   or apply other business-specific logic)
         answer_extracted = qwen_extract_answer(sequence_after_assistant, data_name="math")
         
     return answer_extracted, format_matched
@@ -207,20 +207,20 @@ def extract_solution_r1(solution_str):
 
 def qwen_math_equal_subprocess(prediction, reference, timeout_seconds=10):
     """
-    使用 ProcessPoolExecutor 实现带超时的函数执行
+    Execute math comparison with a timeout using ProcessPoolExecutor.
     
     Args:
-        prediction: 预测结果
-        reference: 参考答案
-        timeout_seconds: 超时时间(秒)
+        prediction: Prediction result
+        reference: Reference answer
+        timeout_seconds: Timeout in seconds
         
     Returns:
-        bool: 执行结果,超时返回 False
+        bool: Execution result; returns False on timeout
     """
     try:
-        # 提交任务到进程池
+        # Submit task to the process pool
         future = global_executor.submit(qwen_math_equal, prediction=prediction, reference=reference, timeout=False)
-        # 等待结果,支持超时
+        # Wait for the result with timeout support
         result = future.result(timeout=timeout_seconds)
         return result
     except TimeoutError:
@@ -317,14 +317,14 @@ def compute_score(solution_str, ground_truth, method='strict'):
     #     raise ValueError(f"Invalid reward function type: {reward_function_type}")
             
 
-    # 1) 提取 "Assistant: " 后面的实际回答
+    # 1) Extract the actual answer after "Assistant: "
     sequence_after_assistant = solution_str.split("Assistant:")[-1]
 
-    # 2) 正则匹配 <think>...</think> 与 <answer>...</answer>
+    # 2) Use regex to match <think>...</think> and <answer>...</answer>
     think_match = re.search(r"<think>(.*?)</think>", sequence_after_assistant, re.DOTALL)
     answer_match = re.search(r"<answer>(.*?)</answer>", sequence_after_assistant, re.DOTALL)
     
-    # 3) 判断“格式是否符合要求”：两个标签都存在，并且内容非空
+    # 3) Verify the format: both tags exist and have non-empty content
     if think_match and answer_match:
         think_content = think_match.group(1).strip()
         answer_content = answer_match.group(1).strip()
@@ -335,34 +335,32 @@ def compute_score(solution_str, ground_truth, method='strict'):
     else:
         format_matched = False
 
-    # 4) 判断“答案是否匹配”
+    # 4) Determine whether the answer matches
     if format_matched:
-        # 如果格式正确，则只用 <answer> 内容来比对答案
+        # If the format is correct, compare only the <answer> content
         model_answer = answer_match.group(1).strip()
         answer_matched = qwen_math_extract_equal_with_timeout_ray(
             sequence=model_answer,
             reference=ground_truth
         )
     else:
-        # 如果格式不正确，则换一种方式检测答案
-        # （示例：直接判断整段内容里是否能匹配出正确答案；
-        #   也可以根据业务需要使用其他逻辑）
+        # If the format is incorrect, fall back to checking the full content
         answer_matched = qwen_math_extract_equal_with_timeout_ray(
             sequence=sequence_after_assistant,
             reference=ground_truth
         )
-    # 5) 最终根据四种情况打分
+    # 5) Score based on the four possible cases
     if answer_matched and format_matched:
-        # 答案匹配 & 格式匹配
+        # Answer matches & format matches
         box_match = 1.0
     elif answer_matched and not format_matched:
-        # 答案匹配 & 格式不匹配
+        # Answer matches & format mismatches
         box_match = 0.5
     elif (not answer_matched) and format_matched:
-        # 答案不匹配 & 格式匹配
+        # Answer mismatches & format matches
         box_match = -0.5
     else:
-        # 答案不匹配 & 格式不匹配
+        # Answer mismatches & format mismatches
         box_match = -1.0
     if random.random() < 0.05:
         # for 5% of the cases, print; otherwise, print nothing to accelerate the process 

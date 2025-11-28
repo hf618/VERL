@@ -155,7 +155,7 @@ def compute_single_effective_rank(
         return 0.0, 0.0
     
 # ============================================================
-# 3. Single-device batched core (集成老哥 batched Gram + 改进)
+# 3. Single-device batched core (integrates batched Gram + improvements)
 # ============================================================
 
 def _calculate_diffs_batched_single_device(
@@ -170,17 +170,17 @@ def _calculate_diffs_batched_single_device(
     base_metrics_batch=None,
 ):
     """
-    单卡上的 batched diff 计算核心：
-    - 利用 masked hidden + Gram 矩阵 + chunking
-    - k_t < D 时用 L-mode (HH^T)，k_t >= D 时用 D-mode (H^T H)
-    - 支持 Response Entropy / Effective Rank / Log Effective Rank / Traditional Rank / Curvature
+    Batched diff computation on a single device:
+    - Uses masked hidden states + Gram matrices + chunking
+    - L-mode (HH^T) when k_t < D, D-mode (H^T H) when k_t >= D
+    - Supports Response Entropy / Effective Rank / Log Effective Rank / Traditional Rank / Curvature
     """
     t0_total = time.perf_counter()
 
     batch_size, total_seq_len, hidden_dim = hidden_states.shape
     device = hidden_states.device
 
-    # 有效长度由 attention_mask 决定
+    # Valid lengths are determined by attention_mask
     lengths = attention_mask.sum(dim=1).long()
     if max_seq_len is not None:
         max_seq_tensor = torch.tensor(max_seq_len, device=device, dtype=torch.long)
@@ -190,7 +190,7 @@ def _calculate_diffs_batched_single_device(
         K_max = total_seq_len
 
     if K_max < 2 or stride <= 0:
-        # 太短或者 stride 不合法，直接返回空结果
+        # Too short or invalid stride; return empty results
         results_storage = {
             f"{name} diff": [torch.tensor([], device=device) for _ in range(batch_size)]
             for name in selected_metric_names
@@ -203,12 +203,12 @@ def _calculate_diffs_batched_single_device(
         )
         return 0.0, results_storage
 
-    # 用 attention_mask 把 padding hidden 清零
+    # Zero out padding hidden states using attention_mask
     mask_expanded = attention_mask.unsqueeze(-1).expand_as(hidden_states)
     hidden = hidden_states * mask_expanded
     hidden = hidden[:, :K_max, :].contiguous()  # [B, K_max, D]
 
-    # 输出存储：每个 metric 一个 [B] 的 list，每个元素里再 append scalar
+    # Output storage: one [B]-length list per metric, appending scalars
     results_storage = {
         f"{name} diff": [[] for _ in range(batch_size)] for name in selected_metric_names
     }
@@ -216,21 +216,21 @@ def _calculate_diffs_batched_single_device(
         {f"{name} diff 2": [[] for _ in range(batch_size)] for name in selected_metric_names}
     )
 
-    # 历史统计（每个 sample / 每个 metric）
+    # Historical stats (per sample / per metric)
     n_metrics = len(selected_metric_names)
     history_sums = torch.zeros(batch_size, n_metrics, device=device, dtype=torch.float32)
     history_counts = torch.zeros(batch_size, device=device, dtype=torch.float32)
     prev_diffs = torch.zeros(batch_size, n_metrics, device=device, dtype=torch.float32)
     has_prev_diff = torch.zeros(batch_size, dtype=torch.bool, device=device)
 
-    # 记录每个样本最后一次 stride 的 k_t，用来决定要不要复用 base_metrics
+    # Record each sample's last stride k_t to decide whether to reuse base_metrics
     last_stride_t = torch.zeros(batch_size, dtype=torch.long, device=device)
 
     metric_map = {name: i for i, name in enumerate(selected_metric_names)}
     has_curvature = "Curvature" in selected_metric_names
     curv_idx = metric_map["Curvature"] if has_curvature else -1
 
-    # 为了控制 D×D Gram 的显存，按 batch 维度切 chunk
+    # Control memory for D×D Gram by chunking along the batch dimension
     chunk_size = 32
     total_compute_time = 0.0
 
@@ -247,40 +247,40 @@ def _calculate_diffs_batched_single_device(
 
         t0_chunk = time.perf_counter()
 
-        # 对该 chunk 的所有 stride 进行循环
+        # Iterate over all strides for this chunk
         for k_t in range(stride, K_max + 1, stride):
-            # 只对长度 >= k_t 的样本算这一档
+            # Only compute for samples with length >= k_t
             active_mask = len_chunk >= k_t
             if not active_mask.any():
                 continue
 
-            # 当前窗口 [0, k_t)
+            # Current window [0, k_t)
             H_t = h_chunk[:, :k_t, :]  # [B_chunk, k_t, D]
             # eigvalsh on CPU does not support bfloat16; upcast for stability
             if H_t.dtype != torch.float32:
                 H_t = H_t.float()
-            # 做中心化：Hc = H - mean_t
+            # Center the data: Hc = H - mean_t
             mu = H_t.mean(dim=1, keepdim=True)
             Hc = H_t - mu  # [B_chunk, k_t, D]
 
-            # L-mode / D-mode 选择
+            # Choose L-mode or D-mode
             if k_t < hidden_dim:
-                # L-mode：Gram_L = Hc Hc^T，[B_chunk, k_t, k_t]
+                # L-mode: Gram_L = Hc Hc^T, shape [B_chunk, k_t, k_t]
                 G = torch.matmul(Hc, Hc.transpose(1, 2))
             else:
-                # D-mode：Gram_D = Hc^T Hc，[B_chunk, D, D]
+                # D-mode: Gram_D = Hc^T Hc, shape [B_chunk, D, D]
                 H_T = Hc.transpose(1, 2)  # [B_chunk, D, k_t]
                 G = torch.matmul(H_T, Hc)  # [B_chunk, D, D]
 
-            # 求特征值：形状为 [B_chunk, N]，N = k_t or hidden_dim
+            # Eigenvalues shape [B_chunk, N], where N = k_t or hidden_dim
             eigvals = torch.linalg.eigvalsh(G)
 
-            # 当前 stride 下的所有 metrics，shape [B_chunk, n_metrics]
+            # Metrics for the current stride, shape [B_chunk, n_metrics]
             curr_metrics_vals = torch.zeros(
                 B_chunk, n_metrics, device=device, dtype=torch.float32
             )
 
-            # 先把非 Curvature 的 metric 批量算好
+            # Compute non-Curvature metrics in batch first
             for name, idx in metric_map.items():
                 if name == "Effective Rank":
                     curr_metrics_vals[:, idx] = batched_effective_rank(
@@ -291,7 +291,7 @@ def _calculate_diffs_batched_single_device(
                         eigvals, log_output=True
                     )
                 elif name == "Traditional Rank":
-                    # ref_dim 用 hidden_dim 保持容差尺度一致
+                    # Use hidden_dim as ref_dim to keep tolerance scale consistent
                     curr_metrics_vals[:, idx] = batched_traditional_rank(
                         eigvals, ref_dim=hidden_dim
                     )
@@ -299,37 +299,37 @@ def _calculate_diffs_batched_single_device(
                     curr_metrics_vals[:, idx] = batched_entropy(
                         eigvals, alpha=1.0001
                     )
-                # Curvature 下面再算
+                # Curvature handled below
 
-            # Curvature 按 active 样本 loop 算（用未中心化的 H_t）
+            # Compute Curvature per active sample (using uncentered H_t)
             if has_curvature:
                 active_indices = torch.nonzero(active_mask).squeeze(-1)
                 for loc_idx in active_indices.tolist():
-                    # H_t[loc_idx] 是 [k_t, D]
+                    # H_t[loc_idx] is [k_t, D]
                     val = compute_single_curvature(H_t[loc_idx])
                     curr_metrics_vals[loc_idx, curv_idx] = val
 
-            # 更新历史，并写入 diff / diff2
+            # Update history and write diff / diff2
             active_indices = torch.nonzero(active_mask).squeeze(-1)
             if active_indices.numel() > 0:
                 for loc_idx in active_indices.tolist():
-                    g_idx = start + loc_idx  # 全局 batch idx
+                    g_idx = start + loc_idx  # Global batch idx
                     curr_vals = curr_metrics_vals[loc_idx]  # [n_metrics]
 
-                    # 当前这一步之前已有多少历史步
+                    # Number of historical steps before this one
                     cnt_prev = hist_cnt_chunk[loc_idx].item()
 
                     if cnt_prev > 0:
                         avg_prev = hist_sum_chunk[loc_idx] / (cnt_prev + EPS)
                         diff = curr_vals - avg_prev  # [n_metrics]
 
-                        # 存 diff
+                        # Store diff
                         for m_idx, m_name in enumerate(selected_metric_names):
                             results_storage[f"{m_name} diff"][g_idx].append(
                                 float(diff[m_idx].item())
                             )
 
-                        # 存 diff2
+                        # Store diff2
                         if has_prev_chunk[loc_idx]:
                             diff2 = diff - prev_diff_chunk[loc_idx]
                             for m_idx, m_name in enumerate(selected_metric_names):
@@ -340,7 +340,7 @@ def _calculate_diffs_batched_single_device(
                         prev_diff_chunk[loc_idx] = diff
                         has_prev_chunk[loc_idx] = True
 
-                    # 更新历史统计
+                    # Update historical statistics
                     hist_sum_chunk[loc_idx] += curr_vals
                     hist_cnt_chunk[loc_idx] += 1.0
                     last_stride_t[g_idx] = k_t
@@ -348,16 +348,16 @@ def _calculate_diffs_batched_single_device(
         t1_chunk = time.perf_counter()
         total_compute_time += (t1_chunk - t0_chunk)
 
-    # 把 chunk 视图写回全局（虽然是 view，本质已经同步，这里只是显式强调）
+    # Write chunk views back to the global tensors (already synced; this is explicit)
     history_sums[:] = history_sums
     history_counts[:] = history_counts
     prev_diffs[:] = prev_diffs
     has_prev_diff[:] = has_prev_diff
 
-    # 4. 复用 base_metrics_batch（只在没有走到最后长度的时候用）
+    # 4. Reuse base_metrics_batch (only when the final length hasn't been reached)
     if base_metrics_batch is not None:
         for i in range(batch_size):
-            # 是否有完整的 base metrics
+            # Whether full base metrics are available
             all_found = True
             base_vals = []
             for name in selected_metric_names:
@@ -374,7 +374,7 @@ def _calculate_diffs_batched_single_device(
             if not all_found:
                 continue
 
-            # 如果 stride 已经覆盖到整个有效长度（或超过），就没必要再补一次
+            # If stride already covers the full valid length (or more), skip reuse
             if last_stride_t[i].item() >= max(1, lengths[i].item() - 1):
                 continue
 
@@ -386,11 +386,11 @@ def _calculate_diffs_batched_single_device(
             avg_t = history_sums[i] / (cnt + EPS)
             diff_t = vals_t - avg_t
 
-            # 存 diff
+            # Store diff
             for m_idx, name in enumerate(selected_metric_names):
                 results_storage[f"{name} diff"][i].append(float(diff_t[m_idx].item()))
 
-            # 存 diff2
+            # Store diff2
             if has_prev_diff[i]:
                 diff2_t = diff_t - prev_diffs[i]
                 for m_idx, name in enumerate(selected_metric_names):
@@ -398,7 +398,7 @@ def _calculate_diffs_batched_single_device(
                         float(diff2_t[m_idx].item())
                     )
 
-    # 5. 把 list -> tensor
+    # 5. Convert list -> tensor
     final_results: dict[str, list[torch.Tensor]] = {}
     for key, list_of_lists in results_storage.items():
         final_results[key] = [
@@ -410,7 +410,7 @@ def _calculate_diffs_batched_single_device(
 
 
 # ============================================================
-# 4. Multi-GPU wrapper（自动按 batch 维度切到多卡）
+# 4. Multi-GPU wrapper (automatically splits batches across GPUs)
 # ============================================================
 
 def calculate_diffs_batched(
@@ -427,13 +427,13 @@ def calculate_diffs_batched(
     """
     Multi-GPU aware wrapper around the single-device implementation.
 
-    使用方式：
-    - 如果 torch.cuda.device_count() <= 1：直接单卡跑 _calculate_diffs_batched_single_device
-    - 如果有多张可见 GPU（由 CUDA_VISIBLE_DEVICES 控制），自动把 batch 切块分到
-      cuda:0, cuda:1, ... 上，并行计算 diff，最后聚合。
+    Usage:
+    - If torch.cuda.device_count() <= 1: run _calculate_diffs_batched_single_device on a single GPU
+    - If multiple GPUs are visible (controlled by CUDA_VISIBLE_DEVICES), split the batch across
+      cuda:0, cuda:1, ... to compute diffs in parallel, then aggregate.
     """
     
-    # 没 GPU 或只有一张，直接单卡
+    # If no GPU or only one, run on a single card
     if (not torch.cuda.is_available()) or (torch.cuda.device_count() <= 1):
         return _calculate_diffs_batched_single_device(
             hidden_states,
@@ -450,7 +450,7 @@ def calculate_diffs_batched(
     gpu_ids = list(range(torch.cuda.device_count()))
     batch_size = hidden_states.shape[0]
 
-    # batch 太小也没必要并行
+    # Skip parallelism when batch is too small
     if batch_size <= 1:
         return _calculate_diffs_batched_single_device(
             hidden_states,
@@ -466,7 +466,7 @@ def calculate_diffs_batched(
 
     device_orig = hidden_states.device
 
-    # 准备全局结果：每个 metric 对应一个长度为 B 的 list，先填 None
+    # Prepare global results: one length-B list per metric, prefilled with None
     all_keys = [f"{n} diff" for n in selected_metric_names] + [
         f"{n} diff 2" for n in selected_metric_names
     ]
@@ -474,7 +474,7 @@ def calculate_diffs_batched(
         k: [None] * batch_size for k in all_keys
     }
 
-    # 把样本索引均匀分给各 GPU
+    # Evenly distribute sample indices across GPUs
     indices = list(range(batch_size))
     n_gpu = len(gpu_ids)
     per_gpu_bs = (batch_size + n_gpu - 1) // n_gpu
@@ -522,7 +522,7 @@ def calculate_diffs_batched(
 
         times[worker_idx] = float(local_time)
 
-        # 把子结果搬回原始 device，并填到 global_results 对应位置
+        # Move sub-results back to the original device and place into global_results
         for key, tensor_list in local_res.items():
             if key not in global_results:
                 continue
@@ -530,7 +530,7 @@ def calculate_diffs_batched(
             for j, global_idx in enumerate(idx_list):
                 global_results[key][global_idx] = tensor_list[j].to(device_orig)
 
-    # 每个 GPU 启一个线程
+    # Launch one thread per GPU
     for w_idx, (dev_id, idx_list) in enumerate(zip(gpu_ids, index_chunks)):
         t = threading.Thread(target=worker, args=(w_idx, dev_id, idx_list))
         t.start()
@@ -539,7 +539,7 @@ def calculate_diffs_batched(
     for t in threads:
         t.join()
 
-    # 防御性：如果有样本没被算到，用单卡再补
+    # Defensive: if any samples were missed, recompute on a single card
     missing_indices = [
         i
         for i in range(batch_size)
@@ -574,7 +574,7 @@ def calculate_diffs_batched(
             for j, global_idx in enumerate(missing_indices):
                 global_results[key][global_idx] = tensor_list[j].to(device_orig)
 
-    # 把 None 填成空 tensor（理论上不应该出现）
+    # Replace None with empty tensors (should not normally occur)
     for key, per_batch_list in global_results.items():
         for i in range(batch_size):
             if per_batch_list[i] is None:
@@ -624,14 +624,14 @@ def _get_metrics_from_eigenvalues(eigenvalues, selected_metric_names, max_dim=No
 
 def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, stride, selected_metric_names, 
                                                 svd_rank, svd_niter, svd_method,
-                                                final_base_metrics=None): # <--- [新增参数]
+                                                final_base_metrics=None): # <--- [Added parameter]
     """
     [Final Adaptive Production Version with Reuse Optimization]
     """
     valid_len = valid_hidden.size(0)
     hidden_dim = valid_hidden.size(1)
     
-    # 检查是否是全量模式，如果是截断模式且序列过长，则不能复用 Base Metric (因为 Base 是全量的，而这里是局部的)
+    # Check for full-sequence mode; if truncated and the sequence is too long, base metrics cannot be reused (base is full sequence, this is a window)
     is_full_sequence_window = (valid_len <= max_seq_len)
 
     if valid_len > max_seq_len:
@@ -748,38 +748,38 @@ def calculate_diffs_for_single_sample_optimized(valid_hidden, max_seq_len, strid
         history_sum = [sm + curr for sm, curr in zip(history_sum, current_metrics)]
         history_count += 1
 
-    # === [新增] Final Step Reuse Logic ===
-    # 条件：用户传入了 Base Metrics，且没有发生窗口截断（或者 Base Metrics 本身就是针对当前窗口的）
-    # 你的场景是 max_seq_len = max_response_length，所以 is_full_sequence_window 应该为 True
+    # === [Added] Final Step Reuse Logic ===
+    # Conditions: user provides Base Metrics and no window truncation occurs (or Base Metrics already correspond to this window)
+    # In this setup, max_seq_len = max_response_length, so is_full_sequence_window should be True
     if final_base_metrics is not None and is_full_sequence_window:
-        # 构造最后一步的 Metrics 列表
+        # Build the metrics list for the final step
         final_metrics_vec = []
         all_found = True
         for name in selected_metric_names:
             if name in final_base_metrics:
                 final_metrics_vec.append(final_base_metrics[name])
             else:
-                # 如果某个指标（比如 Curvature）在 Base Metrics 里没算，就没法复用了
+                # If a metric (e.g., Curvature) is missing from Base Metrics, reuse is impossible
                 all_found = False
                 break
         
-        # 只有当循环最后一步确实没走到终点 (防止重复计算)，并且所有指标都能复用时执行
+        # Execute only if the last step didn't reach the end (to avoid recomputation) and all metrics are reusable
         if all_found and (last_t < valid_len - 1):
-            # 执行标准的 Diff 更新逻辑 (纯数学加减，耗时几乎为0)
+            # Run the standard Diff update logic (pure math, negligible cost)
             if history_count > 0:
                 hist_avg = [sm / history_count for sm in history_sum]
                 curr_diff = [(curr - avg) for curr, avg in zip(final_metrics_vec, hist_avg)]
                 
                 for idx, name in enumerate(selected_metric_names): 
                     per_stride_diffs_i[f"{name} diff"].append(curr_diff[idx])
-                    # 这里不需要加 timing，因为是免费复用的
+                    # No timing needed here because reuse is free
                 
                 if prev_diff is not None:
                     curr_diff2 = [(cd - pd) for cd, pd in zip(curr_diff, prev_diff)]
                     for idx, name in enumerate(selected_metric_names): 
                         per_stride_diffs_i[f"{name} diff 2"].append(curr_diff2[idx])
             
-            # 不需要更新 history_sum 了，因为这是最后一步
+            # No need to update history_sum because this is the final step
             
     return per_stride_diffs_i
 

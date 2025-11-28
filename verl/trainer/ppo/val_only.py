@@ -319,7 +319,7 @@ def _calculate_n_gram_repetition_rate(token_ids: list, n: int) -> float:
     
     return repetition_rate
 # ==============================================================================
-#                 >>>>> 指标注册表 (METRIC_REGISTRY) <<<<<
+#                 >>>>> Metric Registry (METRIC_REGISTRY) <<<<<
 # ==============================================================================
 METRIC_REGISTRY = [
     # --- Rollout Granularity Metrics ---

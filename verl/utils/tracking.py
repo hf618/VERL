@@ -41,7 +41,7 @@ class Tracking(object):
         #     wandb.init(project=project_name, name=experiment_name, config=config,  mode="offline")
         #     print("WandB log dir:", wandb.run.dir)
         #     self.logger['wandb'] = wandb
-        # ===== 新增：构建 wandb 输出路径 =====
+        # ===== Added: build wandb output path =====
     def __init__(self, project_name, experiment_name, default_backend: Union[str, List[str]] = 'console', config=None, default_local_dir=None):
         if isinstance(default_backend, str):
             default_backend = [default_backend]
@@ -57,7 +57,7 @@ class Tracking(object):
         #     import os
         #     import wandb
 
-        #     # 如果未提供 default_local_dir，则 fallback 到默认路径
+        #     # If default_local_dir is not provided, fall back to the default path
         #     if default_local_dir is None:
         #         output_dir = "/home/hfd24/simpleRL-reason/custom/wandb"
         #     else:
@@ -78,7 +78,7 @@ class Tracking(object):
         if 'tracking' in default_backend or 'wandb' in default_backend:
             import os
             import wandb
-            # 如果未提供 default_local_dir，则 fallback 到默认路径
+            # If default_local_dir is not provided, fall back to the default path
 
             if default_local_dir is None:
                 output_dir = "/home/hfd24/simpleRL-reason/custom/wandb"

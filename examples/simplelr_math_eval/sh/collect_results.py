@@ -74,9 +74,9 @@ import re
 
 
 def contains_chinese(string):
-    # 判断字符串中的每个字符是否为中文
+    # Check whether any character in the string is Chinese
     for char in string:
-        # 中文字符的Unicode范围是：\u4e00到\u9fff
+        # Unicode range for Chinese characters: \u4e00 to \u9fff
         if '\u4e00' <= char <= '\u9fff':
             return True
     return False
@@ -508,10 +508,10 @@ def plot_training_progress(results, output_dir, benchmarks=None):
             axes = axes.flatten()
             
             # Plot average metrics first
-            avg_metrics = defaultdict(list)
+                avg_metrics = defaultdict(list)
             for model in models:
                 metrics = results[model]
-                # 计算每个模型的平均值
+                # Compute the average for each model
                 model_acc = []
                 model_tokens = []
                 model_keywords = []
@@ -522,7 +522,7 @@ def plot_training_progress(results, output_dir, benchmarks=None):
                         model_tokens.append(metrics[benchmark].get('tokens', 0))
                         model_keywords.append(metrics[benchmark].get('keywords', 0))
                         model_pass_acc.append(metrics[benchmark].get('pass_acc', 0))
-                # 将每个模型的平均值添加到列表中
+                # Append each model's averages to the lists
                 avg_metrics['acc'].append(sum(model_acc) / len(model_acc) if model_acc else 0)
                 avg_metrics['tokens'].append(sum(model_tokens) / len(model_tokens) if model_tokens else 0)
                 avg_metrics['keywords'].append(sum(model_keywords) / len(model_keywords) if model_keywords else 0)

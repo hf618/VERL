@@ -248,7 +248,7 @@ class Qwen2Model(nn.Module):
         )
 
         self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.all_hidden_states = []  # 新增：存储所有层的 hidden states
+        self.all_hidden_states = []  # Added: store hidden states from all layers
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
@@ -263,7 +263,7 @@ class Qwen2Model(nn.Module):
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         
-        self.all_hidden_states = []  # 每次 forward 前清空
+        self.all_hidden_states = []  # Clear before each forward pass
 
         if get_pp_group().is_first_rank:
             if inputs_embeds is not None:
@@ -271,7 +271,7 @@ class Qwen2Model(nn.Module):
             else:
                 hidden_states = self.embed_tokens(input_ids)
             residual = None
-            # self.all_hidden_states.append(hidden_states.detach().clone())  # 保存初始 embedding
+            # self.all_hidden_states.append(hidden_states.detach().clone())  # Save the initial embedding
         else:
             assert intermediate_tensors is not None
             hidden_states = intermediate_tensors["hidden_states"]
@@ -287,7 +287,7 @@ class Qwen2Model(nn.Module):
                 residual,
             )
             # if i == 18:
-            #     self.all_hidden_states.append(hidden_states.detach().clone().to( torch.bfloat16))  # 保存每一层输出
+            #     self.all_hidden_states.append(hidden_states.detach().clone().to(torch.bfloat16))  # Save each layer output
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
                 "hidden_states": hidden_states,
@@ -297,7 +297,7 @@ class Qwen2Model(nn.Module):
         
         
         hidden_states, _ = self.norm(hidden_states, residual)
-        self.all_hidden_states.append(hidden_states.detach().clone().to(torch.bfloat16))  # 保存最终 norm 输出
+        self.all_hidden_states.append(hidden_states.detach().clone().to(torch.bfloat16))  # Save the final normalized output
         return hidden_states
 
 
@@ -370,12 +370,12 @@ class Qwen2ForCausalLM(nn.Module, SupportsLoRA):
         intermediate_tensors: Optional[IntermediateTensors] = None,
     ) -> torch.Tensor:
 
-        # self.all_hidden_states = []  # 每次 forward 前清空
+        # self.all_hidden_states = []  # Clear before each forward pass
         ##breakpoint(()
         hidden_states = self.model(input_ids, positions, kv_caches,
                                    attn_metadata, intermediate_tensors)
         
-        # self.all_hidden_states = self.model.all_hidden_states  # 获取所有层的 hidden states
+        # self.all_hidden_states = self.model.all_hidden_states  # Get hidden states from all layers
         
         return hidden_states
 

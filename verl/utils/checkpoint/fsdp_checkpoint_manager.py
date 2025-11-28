@@ -143,11 +143,11 @@ class FSDPCheckpointManager(BaseCheckpointManager):
             hf_local_path = os.path.join(local_path, 'huggingface')
             os.makedirs(hf_local_path, exist_ok=True)
             
-            # 先保存配置和tokenizer
+            # Save config and tokenizer first
             self.model._fsdp_wrapped_module.config.save_pretrained(hf_local_path)
             self.tokenizer.save_pretrained(hf_local_path)
             
-            # 获取完整的模型状态字典并保存
+            # Fetch and save the full model state dict
             self.model.save_pretrained(hf_local_path, state_dict=full_state_dict)
 
         torch.distributed.barrier()

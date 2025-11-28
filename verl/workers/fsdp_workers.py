@@ -500,7 +500,7 @@ class ActorRolloutRefWorker(Worker):
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
             output = self.rollout_sharding_manager.postprocess_data(output)
-        # 在 worker 的 GPU 上计算 diff，避免把大 hidden_states 回传给 driver 再算
+        # Compute diffs on the worker GPU to avoid sending large hidden_states back to the driver
         calc_cfg = OmegaConf.select(self.config, 'calculator', default=None) if OmegaConf.is_config(self.config) else None
         data_cfg = OmegaConf.select(self.config, 'data', default=None) if OmegaConf.is_config(self.config) else None
         
@@ -510,7 +510,7 @@ class ActorRolloutRefWorker(Worker):
             and 'hidden_states_decode' in output.batch
             and output.batch['hidden_states_decode'] is not None
         ):
-            # data.max_response_length 可能未下发到 rollout 子 config，回退到 rollout.response_length
+            # data.max_response_length may not be forwarded to the rollout sub-config; fall back to rollout.response_length
             max_seq_len = None
             if data_cfg is not None:
                 max_seq_len = data_cfg.get('max_response_length', None)

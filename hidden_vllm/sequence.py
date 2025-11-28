@@ -282,8 +282,8 @@ class Sequence:
         self.read_offset = 0
         # Input + output tokens
         self.tokens: Optional[List[str]] = None
-        # 魔改
-        self.hidden_states = torch.empty(0, device='cpu', dtype=torch.bfloat16)  # 初始化为空张量
+        # Custom hook for hidden state tracking
+        self.hidden_states = torch.empty(0, device='cpu', dtype=torch.bfloat16)  # Initialize as an empty tensor
    
 
     @property
@@ -349,10 +349,10 @@ class Sequence:
         hidden_states_tensor: torch.tensor,
     ) -> None:
 
-        """使用torch.cat实现增量存储"""
-        # 假设 hidden_states_tensor 是 [num_layers, hidden_dim]
-        new_entry = hidden_states_tensor.unsqueeze(0)  # 变成 [1, num_layers, hidden_dim]
-        new_entry = new_entry.to(self.hidden_states.device)  # 确保设备一致
+        """Store hidden states incrementally using torch.cat."""
+        # Assume hidden_states_tensor is [num_layers, hidden_dim]
+        new_entry = hidden_states_tensor.unsqueeze(0)  # Reshape to [1, num_layers, hidden_dim]
+        new_entry = new_entry.to(self.hidden_states.device)  # Ensure device consistency
         self.hidden_states = torch.cat([self.hidden_states, new_entry], dim=0)
 
     def get_len(self) -> int:

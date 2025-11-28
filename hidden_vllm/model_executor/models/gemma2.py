@@ -275,7 +275,7 @@ class Gemma2Model(nn.Module):
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
         
-        self.all_hidden_states = []  # 每次 forward 前清空
+        self.all_hidden_states = []  # Clear before each forward pass
 
         hidden_states = self.embed_tokens(input_ids)
         hidden_states *= self.normalizer
@@ -290,7 +290,7 @@ class Gemma2Model(nn.Module):
                 attn_metadata,
                 residual,
             )
-        self.all_hidden_states.append(hidden_states.detach().clone().to( torch.bfloat16))  # 保存最终 norm 输出
+        self.all_hidden_states.append(hidden_states.detach().clone().to(torch.bfloat16))  # Save the final normalized output
         hidden_states, _ = self.norm(hidden_states, residual)
         ####breakpoint(()
         return hidden_states

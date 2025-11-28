@@ -147,11 +147,11 @@ class RequestOutput:
         finished_time = time.time() if finished else None
         seq_group.set_finished_time(finished_time)
 
-        # 1. 从SequenceGroup 对象中获取 Prefill 阶段的隐藏状态
-        # 我们使用了 getattr 来安全地获取 hidden_states_prefill 属性，如果不存在则返回None
+        # 1. Get prefill hidden states from the SequenceGroup
+        # Use getattr to safely fetch hidden_states_prefill; return None if missing
         hidden_states_prefill = getattr(seq_group, 'hidden_states_prefill', None)
 
-        # 2. 从每个Sequence 对象中获取 Decode 阶段的隐藏状态
+        # 2. Get decode hidden states from each Sequence object
         hidden_states_list = [
             seq.hidden_states for seq in top_n_seqs
         ]

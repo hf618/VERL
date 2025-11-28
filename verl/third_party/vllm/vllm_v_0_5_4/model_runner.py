@@ -89,7 +89,7 @@ class ModelRunner(ModelRunner):
         # NOTE(sgm): add for verl
         self.model = model  # this will be replaced by get_model()
 
-        # 这一步为了获取padding token id
+        # Fetch padding token id
         # Load tokenizer and get pad_token_id
         try:
             from transformers import AutoTokenizer

@@ -16,7 +16,7 @@ cd ..
 
 
 export NCCL_DEBUG=warn
-# 定义评估脚本路径
+# Define the evaluation script path
 set -x
 
 export WANDB_OFFICIAL=1
@@ -34,12 +34,12 @@ overwrite=false
 n_sampling=1
 specific_steps=""
 visible_gpus=""
-use_wandb_arg="false" # <--- (新增) 默认值
+use_wandb_arg="false" # <--- (added) default value
 
 calculate_metrics="false"
 metrics_to_calc=""
 metric_stride=1
-num_test_sample_per_dataset=-1  # 默认值
+num_test_sample_per_dataset=-1  # Default value
 dtype=" torch.bfloat16"
 run_collect_results="true"
 gpu_memory_utilization=1.0
@@ -273,7 +273,7 @@ tmp_ckpt_file=$(mktemp)
 printf '%s\n' "${node_checkpoints[@]}" > "$tmp_ckpt_file"
 
 if [ "$just_wandb" != "true" ]; then
-    # # 调用转化和评估脚本
+    # Call the conversion and evaluation script
     EVAL_MATH_SEED="$eval_seed" bash sh/convert_and_evaluate_gpu_nodes.sh \
     "$eval_script_path" \
     "$base_checkpoint_path" \

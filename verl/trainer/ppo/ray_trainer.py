@@ -122,8 +122,8 @@ def apply_kl_penalty(data: DataProto, kl_ctrl: core_algos.AdaptiveKLController, 
     return data, metrics
 
 def compute_advantage(data: DataProto, config, adv_estimator, gamma=1.0, lam=1.0, num_repeat=1):
-    # 准备响应组
-    # TODO: 添加其他优势估计方法
+    # Prepare the response group
+    # TODO: add other advantage estimation methods
     if adv_estimator == 'gae':
         values = data.batch['values']
         responses = data.batch['responses']
@@ -139,7 +139,7 @@ def compute_advantage(data: DataProto, config, adv_estimator, gamma=1.0, lam=1.0
                                                                       lam=lam)
         data.batch['advantages_0'] = advantages_0
 
-        data.batch['returns'] = returns # 返回值 'returns' 保持不变
+        data.batch['returns'] = returns # Keep the return values unchanged
     elif adv_estimator == 'grpo':
         token_level_rewards = data.batch['token_level_rewards']
         index = data.non_tensor_batch['uid']
@@ -157,9 +157,9 @@ def compute_advantage(data: DataProto, config, adv_estimator, gamma=1.0, lam=1.0
         raise NotImplementedError
 
 
-    # 核心逻辑：判断是否进行优势函数正则化，只依赖 'add_adv' 参数
+    # Core logic: decide whether to regularize advantages based solely on 'add_adv'
     if config.algorithm.get('add_adv', False):
-        # Case 2, 4: 进行优势函数正则化
+        # Case 2, 4: apply advantage regularization
         if 'aux_rewards' in data.batch:
             kappa = config.algorithm.get('adv_shaping_kappa', 2.0)
             adv_0 = data.batch['advantages_0']
@@ -171,7 +171,7 @@ def compute_advantage(data: DataProto, config, adv_estimator, gamma=1.0, lam=1.0
         else:
             data.batch['advantages'] = data.batch['advantages_0']
     else:
-        # Case 1, 3: 不进行优势函数正则化
+        # Case 1, 3: do not apply advantage regularization
         data.batch['advantages'] = data.batch['advantages_0']
 
     return data
@@ -300,7 +300,7 @@ def compute_data_metrics(batch, use_critic=True):
     sequence_reward = batch.batch['token_level_rewards'].sum(-1)
 
     advantages = batch.batch['advantages']
-    advantages_0 = batch.batch.get('advantages_0', advantages) # 如果不存在则回退到 advantages
+    advantages_0 = batch.batch.get('advantages_0', advantages) # Fallback to advantages if missing
     returns = batch.batch['returns']
 
     max_response_length = batch.batch['responses'].shape[-1]
@@ -633,16 +633,16 @@ class RayPPOTrainer(object):
         else:
             self.kl_ctrl = core_algos.FixedKLController(kl_coef=0.)
 
-        # 解析需要额外保存的步骤
+        # Parse additional steps that need to be saved
         self.extra_save_steps = set()
         except_save_str = self.config.trainer.get("except_save", None)
-        if except_save_str: # 确保传入的不是空字符串
+        if except_save_str: # Ensure the input is not an empty string
             try:
-                # 通过逗号分割，去除空格，并转换为整数集合
+                # Split by comma, strip whitespace, and convert to an integer set
                 self.extra_save_steps = set(int(s.strip()) for s in except_save_str.split(','))
-                print(f"已设置额外的Checkpoint保存步骤: {sorted(list(self.extra_save_steps))}")
+                print(f"Additional checkpoint save steps set: {sorted(list(self.extra_save_steps))}")
             except ValueError:
-                print(f"[警告] 无法解析 except_save 参数: '{except_save_str}'，将忽略此参数。")
+                print(f"[Warning] Unable to parse except_save parameter: '{except_save_str}'. It will be ignored.")
 
         if self.config.algorithm.adv_estimator == 'gae':
             self.use_critic = True
@@ -837,10 +837,10 @@ class RayPPOTrainer(object):
         stacked_p1_distribution = val_only_utils._get_stacked_token_distribution(responses_prompt, masks_prompt, vocab_size)
 
     
-        confidence_k = self.config.trainer.get('confidence_metric_config', {}).get('k', 5) # 默认 k=5
+        confidence_k = self.config.trainer.get('confidence_metric_config', {}).get('k', 5) # Default k=5
 
 
-        repetition_n = self.config.trainer.get('repetition_metric_config', {}).get('n', 4) # 默认为4
+        repetition_n = self.config.trainer.get('repetition_metric_config', {}).get('n', 4) # Default is 4
 
 
         all_rollout_repetition_rates = []
@@ -875,12 +875,12 @@ class RayPPOTrainer(object):
                 calculator_func = metric_info['calculator_func']
 
                 if granularity == 'rollout':
-                    # Rollout 指标: 为每个 rollout 计算一次
+                    # Rollout metrics: compute once per rollout
                     values = [calculator_func(data_payload, j) for j in range(rollout_n)]
                     rollout_metrics[metric_name] = values
                 elif granularity == 'prompt':
-                    # Prompt 指标: 只计算一次
-                    value = calculator_func(data_payload, -1) # -1 表示 j 索引无用
+                    # Prompt metrics: compute once
+                    value = calculator_func(data_payload, -1) # -1 means j index is unused
                     prompt_metrics[metric_name] = value
 
         return rollout_metrics, prompt_metrics
@@ -998,7 +998,7 @@ class RayPPOTrainer(object):
                 rollout_metrics_dict, prompt_metrics_dict = self._calculate_prompt_metrics(
                     hidden_states_by_prompt[i], masks_by_prompt[i], responses_by_prompt[i],
                     rewards_0_by_prompt[i], rewards_by_prompt[i], correctness_by_prompt[i],
-                    avg_log_probs_by_prompt[i] if avg_log_probs_by_prompt is not None else None, # 新增参数
+                    avg_log_probs_by_prompt[i] if avg_log_probs_by_prompt is not None else None, # Added parameter
                     all_required_metrics, x_layer, rollout_n, safe_vocab_size
                 )
 
@@ -1013,7 +1013,7 @@ class RayPPOTrainer(object):
                             'data_source': data_source,
                             'analysis_type': 'exploit'
                         }
-                        # 只从 rollout_metrics_dict 中取值
+                        # Pull values only from rollout_metrics_dict
                         for metric, values in rollout_metrics_dict.items():
                             if metric in all_required_metrics and j < len(values):
                                 record[metric] = values[j]
@@ -1027,7 +1027,7 @@ class RayPPOTrainer(object):
                         'data_source': data_source,
                         'analysis_type': 'explore'
                     }
-                    # 只从 prompt_metrics_dict 中取值
+                    # Pull values only from prompt_metrics_dict
                     for metric, value in prompt_metrics_dict.items():
                         if metric in all_required_metrics:
                             record[metric] = value
@@ -1057,7 +1057,7 @@ class RayPPOTrainer(object):
                 print("[ERROR] Unable to write Excel file because 'openpyxl' library is missing.")
                 print("Please run 'pip install openpyxl' to install it.")
                 print("As a fallback, the data will be saved to a single CSV file.")
-                # 如果缺少库，则回退到保存单个CSV
+                # If the library is missing, fall back to saving a single CSV
                 output_path_csv = os.path.join(self.config.trainer.default_local_dir, output_filename_base)
                 df.to_csv(output_path_csv, index=False)
                 print(f"Alternative option: The merged data has been saved to a CSV file: {output_path_csv}")
@@ -1382,17 +1382,17 @@ class RayPPOTrainer(object):
         with open(local_latest_checkpointed_iteration, 'w') as f:
             f.write(str(self.global_steps))
             
-    # # 新增过滤方法（需在类中定义）
+    # # Added filtering method (define within the class)
     # def _filter_batch(self, batch, mask: np.ndarray) -> DataProto:
-    #     """根据布尔掩码过滤批次数据"""
+    #     """Filter batch data based on a boolean mask"""
     #     mask_tensor = torch.from_numpy(mask).to(batch.batch.device)
     
-    #     # 过滤张量数据
+    #     # Filter tensor data
     #     filtered_tensors = {
     #         k: v[mask_tensor] for k, v in batch.batch.items()
     #     }
     
-    #     # 过滤非张量数据（如果有）
+    #     # Filter non-tensor data (if any)
     #     filtered_non_tensors = {
     #         k: [x for x, m in zip(v, mask) if m]
     #         for k, v in batch.non_tensor_batch.items()
@@ -1404,17 +1404,17 @@ class RayPPOTrainer(object):
     #         meta_info=batch.meta_info
     #     )
     def _filter_batch(self, batch, mask: np.ndarray) -> DataProto:
-        """根据布尔掩码过滤批次数据"""
+        """Filter batch data based on a boolean mask."""
         mask_tensor = torch.from_numpy(mask).to(batch.batch.device)
     
-        # 过滤张量数据
+        # Filter tensor data
         filtered_tensors = {
             k: v[mask_tensor] for k, v in batch.batch.items()
         }
     
-        # ==== 修复点：保持 non_tensor_batch 为 NumPy 数组 ====
+        # ==== Fix: keep non_tensor_batch as NumPy arrays ====
         filtered_non_tensors = {
-            k: v[mask]  # 直接使用 NumPy 布尔索引（保持数组类型）
+            k: v[mask]  # Use NumPy boolean indexing directly (preserve array type)
             for k, v in batch.non_tensor_batch.items()
         }
     
@@ -1655,25 +1655,25 @@ class RayPPOTrainer(object):
 
         import os
 
-        # 获取 checkpoint 路径
+        # Get checkpoint path
         checkpoint_dir = self.config.trainer.default_local_dir
         experiment_name = self.config.trainer.experiment_name
 
-        # 构造 wandb 日志路径：只到 wandb 一级目录
+        # Build wandb log path up to the wandb directory
         wandb_log_dir = os.path.join(checkpoint_dir, 'wandb')
 
-        # 创建目录
+        # Create directory
         os.makedirs(wandb_log_dir, exist_ok=True)
 
-        # 设置环境变量，告诉 wandb 把日志写入这里
+        # Set environment variable so wandb writes logs here
         os.environ["WANDB_DIR"] = wandb_log_dir
 
-        # 初始化 logger
+        # Initialize logger
         logger = Tracking(project_name=self.config.trainer.project_name,
                         experiment_name=self.config.trainer.experiment_name,
                         default_backend=self.config.trainer.logger,
                         config=OmegaConf.to_container(self.config, resolve=True),
-                        default_local_dir=self.config.trainer.default_local_dir)  # 👈 增加参数
+                        default_local_dir=self.config.trainer.default_local_dir)  # 👈 Added parameter
 
         self.global_steps = 0
 
@@ -1716,7 +1716,7 @@ class RayPPOTrainer(object):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
                         
                     
-                    # 为批次中的每个样本生成一个唯一的 UUID，用于在后续处理中追踪和识别每个样本，特别是在计算 GRPO (Group-based Reward Policy Optimization) 优势时很重要
+                    # Generate a unique UUID for each sample to track them later, especially for GRPO advantage computation
                     batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))], dtype=object)
                     # repeat to align with repeated responses in rollout
                     batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
@@ -1728,17 +1728,17 @@ class RayPPOTrainer(object):
                     # print("------batch--------", batch)
                     # print("------response-----", batch.batch["responses"])
                     # print("------batch.batch['attention_mask']------", batch.batch['attention_mask'])
-                    # ===== 新增响应长度统计 =====
+                    # ===== Added response length statistics =====
                     # response_info = _compute_response_info(batch)
                     # response_lengths = response_info['response_length']
-                    # max_len = batch.batch['responses'].shape[-1]  # 获取当前批次的最大响应长度
-                    # # ===== 核心修改：按样本整体屏蔽 =====
-                    # # 生成样本级掩码（True表示需要屏蔽）
+                    # max_len = batch.batch['responses'].shape[-1]  # Get the maximum response length in the batch
+                    # # ===== Core change: mask at the sample level =====
+                    # # Generate a sample-level mask (True means it should be masked)
                     # sample_mask = (response_lengths >= max_len)  # [batch_size]
-                    # # 将样本级掩码扩展到与attention_mask相同形状
-                    # # 假设attention_mask形状为 [batch_size, seq_len]
+                    # # Expand the sample-level mask to match attention_mask shape
+                    # # Assume attention_mask has shape [batch_size, seq_len]
                     # mask_2d = sample_mask.unsqueeze(-1).expand_as(batch.batch['attention_mask'])
-                    # # 执行批量屏蔽（将被屏蔽样本的整个attention置零）
+                    # # Apply batch masking (zero out the entire attention for masked samples)
                     # adjusted_attention_mask = torch.where(
                     # mask_2d,
                     # torch.zeros_like(batch.batch['attention_mask']),
@@ -1747,9 +1747,9 @@ class RayPPOTrainer(object):
 
                     response_info = _compute_response_info(batch)
                     response_lengths = response_info['response_length']
-                    max_len = batch.batch['responses'].shape[-1]  # 获取当前批次的最大响应长度
-                    # ===== 核心修改：按样本整体屏蔽 =====
-                    # 生成样本级掩码（True表示需要屏蔽）
+                    max_len = batch.batch['responses'].shape[-1]  # Get the maximum response length in the batch
+                    # ===== Core change: mask at the sample level =====
+                    # Generate a sample-level mask (True means it should be masked)
                     sample_mask = (response_lengths >= max_len)  # [batch_size]
                     
                     
@@ -1757,10 +1757,10 @@ class RayPPOTrainer(object):
                     adjusted_attention_mask = batch.batch['attention_mask'].clone()
                     for i, mask in enumerate(sample_mask):
                         if mask:
-                            adjusted_attention_mask[i, -max_len:] = 0  # 将响应部分掩码置零
+                            adjusted_attention_mask[i, -max_len:] = 0  # Zero out the response portion
                     
 
-                    # 判断是否用 hidden_states_decode 计算 metrics
+                    # Decide whether to compute metrics using hidden_states_decode
                     mem_before_cal = _capture_gpu_memory_mb()
                     with _timer('cal', timing_raw):
                         if use_calculator and 'hidden_states_decode' in batch.batch:
@@ -1768,13 +1768,13 @@ class RayPPOTrainer(object):
                             prompt_len = batch.batch['prompts'].shape[1]
                             response_attention_mask = batch.batch['attention_mask'][:, prompt_len:]
                             if 'calculator_results' in batch.batch:
-                                # 已在 worker 端 GPU 上计算好，直接复用
+                                # Already computed on the worker GPU; reuse directly
                                 calc_metric_profile = batch.meta_info.get('calc_metric_profile', {}) if batch.meta_info else {}
                             else:
-                                # 0. 为了高效，先将需要的数据暂存
+                                # 0. Cache required data for efficiency
                                 diff_stride_train = self.config.calculator.get('diff_stride', 20)
 
-                                # 1. 执行原有的“单样本”指标计算，结果存入 batch 供后续处理
+                                # 1. Run the original single-sample metric calculation and store results in the batch
                                 batch.batch['calculator_results'], calc_metric_profile = self.calculator(
                                     hidden_states=batch.batch['hidden_states_decode'],
                                     attention_mask=response_attention_mask,
@@ -1782,7 +1782,7 @@ class RayPPOTrainer(object):
                                     diff_stride=diff_stride_train
                                 )
                             metric_profile_step.update(calc_metric_profile)
-                            # 将 worker 端或本地 calculator 的耗时记录为 sum/max，便于比对并行和墙钟
+                            # Record worker/local calculator timing as sum/max for comparison with wall-clock time
                             
                             if calc_metric_profile:
                                 worker_times = list(calc_metric_profile.values())
@@ -1795,7 +1795,7 @@ class RayPPOTrainer(object):
                                 aggregated_metrics = self._compute_aggregated_metrics(batch.batch['hidden_states_decode'], response_attention_mask, stride=train_stride)
 
                         
-                                # 将返回的指标添加到 cal/ 命名空间，保持原有指标名不变
+                                # Add returned metrics into the cal/ namespace, keeping names unchanged
                                 for layer, layer_metrics in aggregated_metrics.items():
                                     for name, value in layer_metrics.items():
                                         log_key = f"cal/layer_{layer}/{name}"
@@ -1814,8 +1814,8 @@ class RayPPOTrainer(object):
                     if self.config.trainer.remove_clip:
                         batch.batch['attention_mask'] = adjusted_attention_mask
 
-                    # ===== 指标统计 =====
-                    truncated_ratio = torch.sum(sample_mask.float()).item()  # 计算被屏蔽样本比例
+                    # ===== Metric statistics =====
+                    truncated_ratio = torch.sum(sample_mask.float()).item()  # Compute proportion of masked samples
                     
                     # print('adaptive_mask/truncated_ratio', truncated_ratio)
                     # print('adaptive_mask/total_ratio', adjusted_attention_mask.shape[0])
@@ -1863,24 +1863,22 @@ class RayPPOTrainer(object):
 
                         reward_tensor_dict: dict = self.reward_fn(batch, is_val=False, metrics_old=metrics_old)
 
-                        # 总是记录用于日志和分析的原始分数和正确性
+                        # Always record raw scores and correctness for logging/analysis
                         batch.batch['token_level_scores_0'] = reward_tensor_dict['reward_tensor_0']
                         batch.batch['correctness'] = reward_tensor_dict['correctness_tensor']
 
 
-                        # 1. 决定用于计算 GAE/GRPO 的基础奖励 (token_level_scores)。
-                        #    该逻辑现在只由 --add_reward 控制。
+                        # 1. Decide the base reward (token_level_scores) for GAE/GRPO, controlled only by --add_reward.
                         if self.config.reward_manager.add_reward:
-                            # Case 3 & 4: 基础奖励包含辅助奖励
+                            # Case 3 & 4: base reward includes auxiliary reward
                             batch.batch['token_level_scores'] = reward_tensor_dict['reward_tensor']
                         else:
-                            # Case 1 & 2: 基础奖励仅为任务奖励
+                            # Case 1 & 2: base reward is task-only
                             batch.batch['token_level_scores'] = reward_tensor_dict['reward_tensor_0']
 
-                        # 2. 准备用于优势函数正则化的数据。
-                        #    该逻辑现在只由 --add_adv 控制。
+                        # 2. Prepare data for advantage regularization, controlled only by --add_adv.
                         if self.config.algorithm.get('add_adv', False):
-                            # Case 2 & 4: 计算辅助奖励，用于后续的优势函数正则化。
+                            # Case 2 & 4: compute auxiliary rewards for later advantage regularization
                             aux_rewards = reward_tensor_dict['reward_tensor'] - reward_tensor_dict['reward_tensor_0']
                             batch.batch['aux_rewards'] = aux_rewards
 
