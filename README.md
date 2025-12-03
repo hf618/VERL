@@ -8,6 +8,15 @@ Velocity-Exploiting Rank-Learning (VERL)</span>
 
 </div>
 
+<p align="center">
+  <a href="https://hf618.github.io/VERL.github.io/"><b>[🌐 Website]</b></a> •
+  <a href="https://arxiv.org/abs/2509.23808"><b>[📜 Paper]</b></a> •
+  <a href="https://github.com/hf618/VERL"><b>[🐱 GitHub]</b></a>
+</p>
+
+<p align="center">
+Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the Exploration-Exploitation Trade-off: A Hidden State Approach for LLM Reasoning in RLVR</a>"
+</p>
 
 <br>
 
@@ -18,6 +27,23 @@ Velocity-Exploiting Rank-Learning (VERL)</span>
     </em>
 </p>
 
+<!-- <br> -->
+
+## 🔥 News
+
+<!-- - [2023/10/13] 🔥🔥🔥 We release a demo for ToRA at [🐯 Gradio](https://9557c5365a6f44dc84.gradio.live), try it out!!! -->
+
+<!-- - [2023/06/13] We release all prompts used in the SwS framework in <a href="https://github.com/MasterVito/SwS/tree/master/prompts"><b>prompts</b></a>.
+- [2023/06/13] We update the demo set of synthetic problems from SwS in <a href="https://github.com/MasterVito/SwS/tree/master/datasets"><b>datasets</b></a>, including 500 samples for each model and category. You can also find them in <a href="https://huggingface.co/datasets/MasterVito/SwS-Demo-Dataset"><b>Demo Dataset</b></a>. -->
+
+- [2025/10/10] **We provide the full code for training and evaluation for Velocity-Exploiting Rank-Learning.**
+- [2025/09/28] Our paper, repository, website released.
+
+<!-- <br> -->
+
+## 👽 Analysis, Method, Results
+
+For a brief description, please refer to our [Project Page](https://hf618.github.io/VERL.github.io/); for a detailed description, please refer to the [Paper](https://arxiv.org/abs/2509.23808).
 
 ## 🔧Key Implementations
 
@@ -98,3 +124,29 @@ bash eval.sh
 You can also add your own test datasets to [this fold](/examples/simplelr_math_eval/data).
 
 <br>
+
+## ☕️ Citation
+
+If you find this repository helpful, please consider citing our paper:
+
+```
+@misc{huang2025explorationexploitationtradeoffhiddenstate,
+      title={Beyond the Exploration-Exploitation Trade-off: A Hidden State Approach for LLM Reasoning in RLVR}, 
+      author={Fanding Huang and Guanbo Huang and Xiao Fan and Yi He and Xiao Liang and Xiao Chen and Qinting Jiang and Faisal Nadeem Khan and Jingyan Jiang and Zhi Wang},
+      year={2025},
+      eprint={2509.23808},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2509.23808}, 
+}
+```
+
+<br>
+
+## 🙏 Acknowledgement
+
+We sincerely appreciate the outstanding work of [veRL](https://github.com/volcengine/verl) and [SimpleRL-Zoo](https://arxiv.org/abs/2503.18892).
+
+## 🌟 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=hf618/VERL&type=Date)](https://star-history.com/#hf618/VERL&Date)
