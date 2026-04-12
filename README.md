@@ -15,7 +15,7 @@ Velocity-Exploiting Rank-Learning (VERL)</span>
 </p>
 
 <p align="center">
-Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the Exploration-Exploitation Trade-off: A Hidden State Approach for LLM Reasoning in RLVR</a>"
+Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Semantic-Space Exploration and Exploitation in RLVR for LLM Reasoning</a>"
 </p>
 
 <br>
@@ -36,8 +36,9 @@ Repo for "<a href="https://arxiv.org/abs/2509.23808" target="_blank">Beyond the 
 <!-- - [2023/06/13] We release all prompts used in the SwS framework in <a href="https://github.com/MasterVito/SwS/tree/master/prompts"><b>prompts</b></a>.
 - [2023/06/13] We update the demo set of synthetic problems from SwS in <a href="https://github.com/MasterVito/SwS/tree/master/datasets"><b>datasets</b></a>, including 500 samples for each model and category. You can also find them in <a href="https://huggingface.co/datasets/MasterVito/SwS-Demo-Dataset"><b>Demo Dataset</b></a>. -->
 
-- [2025/10/10] **We provide the full code for training and evaluation for Velocity-Exploiting Rank-Learning.**
-- [2025/09/28] Our paper, repository, website released.
+- [2026/04/06] 🎉 **Our work is accepted as an <span style="color:red;">ACL 2026 Findings</span> paper.**
+- [2025/10/10] 🚀 We provide the full code for training and evaluation for VERL.
+- [2025/09/28] 📄 Paper, repository, and website released.
 
 <!-- <br> -->
 
@@ -131,7 +132,7 @@ If you find this repository helpful, please consider citing our paper:
 
 ```
 @misc{huang2025explorationexploitationtradeoffhiddenstate,
-      title={Beyond the Exploration-Exploitation Trade-off: A Hidden State Approach for LLM Reasoning in RLVR}, 
+      title={Semantic-Space Exploration and Exploitation in RLVR for LLM Reasoning}, 
       author={Fanding Huang and Guanbo Huang and Xiao Fan and Yi He and Xiao Liang and Xiao Chen and Qinting Jiang and Faisal Nadeem Khan and Jingyan Jiang and Zhi Wang},
       year={2025},
       eprint={2509.23808},
