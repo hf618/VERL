@@ -131,11 +131,14 @@ You can also add your own test datasets to [this fold](/examples/simplelr_math_e
 If you find this repository helpful, please consider citing our paper:
 
 ```
-@article{huang2025beyond,
-  title={Beyond the exploration-exploitation trade-off: A hidden state approach for llm reasoning in rlvr},
-  author={Huang, Fanding and Huang, Guanbo and Fan, Xiao and He, Yi and Liang, Xiao and Chen, Xiao and Jiang, Qinting and Khan, Faisal Nadeem and Jiang, Jingyan and Wang, Zhi},
-  journal={arXiv preprint arXiv:2509.23808},
-  year={2025}
+@misc{huang2026semanticspaceexplorationexploitationrlvr,
+      title={Semantic-Space Exploration and Exploitation in RLVR for LLM Reasoning}, 
+      author={Fanding Huang and Guanbo Huang and Xiao Fan and Yi He and Xiao Liang and Xiao Chen and Qinting Jiang and Faisal Nadeem Khan and Jingyan Jiang and Zhi Wang},
+      year={2026},
+      eprint={2509.23808},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2509.23808}, 
 }
 ```
 
